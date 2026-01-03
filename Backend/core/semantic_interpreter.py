@@ -1,14 +1,9 @@
 """
-Semantic Interpretation Module - Layer 4 (Enhanced)
+Semantic Interpretation Module - Layer 4 
 
 This is where AI enters the pipeline.
 Uses LLM to understand MEANING, not layout.
 
-ENHANCED for:
-- Side-by-side financial statements (Income | Amount | Expenditure | Amount)
-- Indian number formatting (e.g., 18,18,25,263)
-- Complex multi-page financial documents
-- Balance sheets with dual columns
 """
 
 import json
@@ -18,65 +13,9 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field, asdict
 
 from langchain_core.prompts import ChatPromptTemplate
-from llm import get_groq_llm
+from services.llm import get_groq_llm
 
 logger = logging.getLogger("PDF_Agent.SemanticInterpreter")
-
-
-# -------------------- Data Classes --------------------
-
-@dataclass
-class SemanticColumn:
-    """A semantically understood column"""
-    name: str
-    original_name: Optional[str]
-    data_type: str
-    confidence: float
-
-
-@dataclass
-class SemanticTable:
-    """A fully interpreted table"""
-    table_id: str
-    table_name: str
-    table_intent: str
-    confidence: float
-    columns: List[Dict[str, Any]]
-    rows: List[Dict[str, Any]]
-    page_range: List[int]
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
-class DocumentMetadata:
-    """Document-level extracted metadata"""
-    title: Optional[str] = None
-    organization: Optional[str] = None
-    address: Optional[str] = None
-    department: Optional[str] = None
-    year: Optional[str] = None
-    period: Optional[str] = None
-    document_type: Optional[str] = None
-    auditor: Optional[str] = None
-    place: Optional[str] = None
-    date: Optional[str] = None
-    confidence: float = 0.0
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
-class SemanticOutput:
-    """Complete output of Layer 4"""
-    tables: List[Dict[str, Any]]
-    metadata: Dict[str, Any]
-    processing_notes: List[str]
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
 
 
 # -------------------- Main Entry Point --------------------
@@ -155,32 +94,32 @@ def _extract_document_metadata(
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are a document metadata extraction agent for Indian financial documents.
 
-Extract metadata from the provided OCR text. This may be from:
-- Income & Expenditure Accounts
-- Balance Sheets
-- Fixed Asset Schedules
-- NAAC Reports
-- Audit Reports
+        Extract metadata from the provided OCR text. This may be from:
+        - Income & Expenditure Accounts
+        - Balance Sheets
+        - Fixed Asset Schedules
+        - NAAC Reports
+        - Audit Reports
 
-Return ONLY valid JSON:
-{{
-  "title": "Full document title",
-  "organization": "Organization/College name",
-  "address": "Full address if present",
-  "year": "Financial year (e.g., '2020-2021')",
-  "period": "Period description (e.g., 'For the year ended 31.03.2021')",
-  "document_type": "Income and Expenditure Account | Balance Sheet | Fixed Assets Schedule | other",
-  "auditor": "Auditor name and firm if present",
-  "place": "Place of signing",
-  "date": "Date of document",
-  "confidence": 0.0 to 1.0
-}}
+        Return ONLY valid JSON:
+        {{
+        "title": "Full document title",
+        "organization": "Organization/College name",
+        "address": "Full address if present",
+        "year": "Financial year (e.g., '2020-2021')",
+        "period": "Period description (e.g., 'For the year ended 31.03.2021')",
+        "document_type": "Income and Expenditure Account | Balance Sheet | Fixed Assets Schedule | other",
+        "auditor": "Auditor name and firm if present",
+        "place": "Place of signing",
+        "date": "Date of document",
+        "confidence": 0.0 to 1.0
+        }}
 
-Rules:
-- Extract ONLY what is explicitly stated
-- For organization, look for college/institution names
-- Indian format: dates as DD.MM.YYYY, amounts with Indian comma notation"""),
-        ("human", "OCR Text:\n{text}")
+        Rules:
+        - Extract ONLY what is explicitly stated
+        - For organization, look for college/institution names
+        - Indian format: dates as DD.MM.YYYY, amounts with Indian comma notation"""),
+                ("human", "OCR Text:\n{text}")
     ])
     
     try:
@@ -242,67 +181,67 @@ def _interpret_financial_document(
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert financial document parser for Indian educational institutions.
 
-You are given raw OCR text from a scanned financial document. Your task is to RECONSTRUCT the original table structure accurately.
+        You are given raw OCR text from a scanned financial document. Your task is to RECONSTRUCT the original table structure accurately.
 
-CRITICAL: Indian financial statements often have SIDE-BY-SIDE layouts:
+        CRITICAL: Indian financial statements often have SIDE-BY-SIDE layouts:
 
-INCOME & EXPENDITURE ACCOUNT format:
-| Expenditure | Amount (Rs.) | Income | Amount (Rs.) |
-| Salary | 18,18,25,263 | Fees Receipts | 20,20,50,837 |
+        INCOME & EXPENDITURE ACCOUNT format:
+        | Expenditure | Amount (Rs.) | Income | Amount (Rs.) |
+        | Salary | 18,18,25,263 | Fees Receipts | 20,20,50,837 |
 
-BALANCE SHEET format:
-| Liabilities | Amount (Rs.P) | Assets | Amount (Rs.P) |
-| Capital Account | 50,00,000 | Fixed Assets | 9,36,10,338 |
+        BALANCE SHEET format:
+        | Liabilities | Amount (Rs.P) | Assets | Amount (Rs.P) |
+        | Capital Account | 50,00,000 | Fixed Assets | 9,36,10,338 |
 
-Return ONLY valid JSON with this structure:
-{{
-  "tables": [
-    {{
-      "table_name": "Income and Expenditure Account",
-      "table_intent": "income_expenditure",
-      "columns": [
-        {{"name": "Expenditure", "data_type": "string"}},
-        {{"name": "Expenditure Amount (Rs.)", "data_type": "currency"}},
-        {{"name": "Income", "data_type": "string"}},
-        {{"name": "Income Amount (Rs.)", "data_type": "currency"}}
-      ],
-      "rows": [
+        Return ONLY valid JSON with this structure:
         {{
-          "data": {{
-            "Expenditure": "Salary",
-            "Expenditure Amount (Rs.)": "18,18,25,263",
-            "Income": "Fees Receipts",
-            "Income Amount (Rs.)": "20,20,50,837"
-          }},
-          "is_noise": false
+        "tables": [
+            {{
+            "table_name": "Income and Expenditure Account",
+            "table_intent": "income_expenditure",
+            "columns": [
+                {{"name": "Expenditure", "data_type": "string"}},
+                {{"name": "Expenditure Amount (Rs.)", "data_type": "currency"}},
+                {{"name": "Income", "data_type": "string"}},
+                {{"name": "Income Amount (Rs.)", "data_type": "currency"}}
+            ],
+            "rows": [
+                {{
+                "data": {{
+                    "Expenditure": "Salary",
+                    "Expenditure Amount (Rs.)": "18,18,25,263",
+                    "Income": "Fees Receipts",
+                    "Income Amount (Rs.)": "20,20,50,837"
+                }},
+                "is_noise": false
+                }}
+            ]
+            }}
+        ]
         }}
-      ]
-    }}
-  ]
-}}
 
-CRITICAL RULES:
-1. PRESERVE Indian number format exactly (e.g., 18,18,25,263 NOT 181825263)
-2. For dual-column tables, create 4 columns (Left Description, Left Amount, Right Description, Right Amount)
-3. Match expenditure items with their amounts on the LEFT side
-4. Match income items with their amounts on the RIGHT side
-5. Empty cells should be ""
-6. Include TOTAL rows with is_noise: false (they are important)
-7. Mark signature/footer/auditor rows as is_noise: true
-8. Extract ALL data rows - do not skip any
-9. If the document has multiple tables (e.g., Income & Expenditure + Balance Sheet), create separate table entries
-10. For Fixed Assets schedule, preserve all columns including depreciation details"""),
-        ("human", """Document Type: {doc_type}
-Organization: {org}
-Period: {period}
+        CRITICAL RULES:
+        1. PRESERVE Indian number format exactly (e.g., 18,18,25,263 NOT 181825263)
+        2. For dual-column tables, create 4 columns (Left Description, Left Amount, Right Description, Right Amount)
+        3. Match expenditure items with their amounts on the LEFT side
+        4. Match income items with their amounts on the RIGHT side
+        5. Empty cells should be ""
+        6. Include TOTAL rows with is_noise: false (they are important)
+        7. Mark signature/footer/auditor rows as is_noise: true
+        8. Extract ALL data rows - do not skip any
+        9. If the document has multiple tables (e.g., Income & Expenditure + Balance Sheet), create separate table entries
+        10. For Fixed Assets schedule, preserve all columns including depreciation details"""),
+                ("human", """Document Type: {doc_type}
+        Organization: {org}
+        Period: {period}
 
-CONTEXT (headers/titles):
-{context}
+        CONTEXT (headers/titles):
+        {context}
 
-RAW TABLE DATA:
-{raw_data}
+        RAW TABLE DATA:
+        {raw_data}
 
-Parse this into structured tables. Preserve ALL data and Indian number formatting.""")
+        Parse this into structured tables. Preserve ALL data and Indian number formatting.""")
     ])
     
     try:

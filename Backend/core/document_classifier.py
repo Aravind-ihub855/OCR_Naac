@@ -11,36 +11,20 @@ NO table extraction, NO LLM usage at this layer.
 """
 
 import io
+import os
 import logging
 from typing import Dict, Any, Optional
-from dataclasses import dataclass, asdict
 
 import pdfplumber
 from pdf2image import convert_from_bytes
 import pytesseract
 from PIL import Image
 
+from models import DocumentAnalysis
+
 logger = logging.getLogger("PDF_Agent.Classifier")
 
-# Windows Poppler path (required for pdf2image)
-POPPLER_PATH = r"C:\poppler-25.12.0\Library\bin"
-
-
-@dataclass
-class DocumentAnalysis:
-    """Result of document classification"""
-    page_count: int
-    content_type: str  # "text-based", "scanned", "mixed"
-    has_tables: bool
-    table_count: int
-    text_extractable: bool
-    pages_with_text: int
-    pages_with_images: int
-    raw_text_preview: str  # First 500 chars
-    page_details: list
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+POPPLER_PATH = os.getenv("POPPLER_PATH")
 
 
 def analyze_document(pdf_bytes: bytes) -> DocumentAnalysis:

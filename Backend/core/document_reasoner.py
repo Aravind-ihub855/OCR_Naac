@@ -1,7 +1,5 @@
 """
-Document Reasoning Layer - Layer 5 (ENHANCED v3 - Multi-Table Support)
-
-Key Enhancement: Handle multi-table documents (e.g., PDF with I&E + Balance Sheet + Fixed Assets)
+Document Reasoning Layer - Layer 5 
 
 Approach:
 1. Collect text PER PAGE (not combined)
@@ -18,85 +16,9 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 
 from langchain_core.prompts import ChatPromptTemplate
-from llm import get_groq_llm
+from services.llm import get_groq_llm
 
 logger = logging.getLogger("PDF_Agent.DocumentReasoner")
-
-
-# -------------------- Document Archetypes --------------------
-
-class DocumentArchetype(Enum):
-    INCOME_EXPENDITURE = "income_expenditure"
-    BALANCE_SHEET = "balance_sheet"
-    FIXED_ASSETS = "fixed_assets"
-    GENERAL_TABLE = "general_table"
-
-
-ARCHETYPE_SCHEMAS = {
-    DocumentArchetype.INCOME_EXPENDITURE: {
-        "description": "Income and Expenditure Account",
-        "columns": [
-            {"name": "Expenditure", "type": "string"},
-            {"name": "Expenditure Amount (Rs.)", "type": "currency"},
-            {"name": "Income", "type": "string"},
-            {"name": "Income Amount (Rs.)", "type": "currency"}
-        ]
-    },
-    DocumentArchetype.BALANCE_SHEET: {
-        "description": "Balance Sheet",
-        "columns": [
-            {"name": "Liabilities", "type": "string"},
-            {"name": "Liabilities Amount (Rs.)", "type": "currency"},
-            {"name": "Assets", "type": "string"},
-            {"name": "Assets Amount (Rs.)", "type": "currency"}
-        ]
-    },
-    DocumentArchetype.FIXED_ASSETS: {
-        "description": "Fixed Assets Schedule",
-        "columns": [
-            {"name": "Sl. No.", "type": "number"},
-            {"name": "Description of Assets", "type": "string"},
-            {"name": "WDV Opening", "type": "currency"},
-            {"name": "Additions", "type": "currency"},
-            {"name": "Deletions", "type": "currency"},
-            {"name": "Total", "type": "currency"},
-            {"name": "Rate %", "type": "number"},
-            {"name": "Depreciation", "type": "currency"},
-            {"name": "WDV Closing", "type": "currency"}
-        ]
-    }
-}
-
-
-# -------------------- Data Classes --------------------
-
-@dataclass
-class ReasonedTable:
-    table_name: str
-    archetype: str
-    columns: List[Dict[str, Any]]
-    rows: List[Dict[str, Any]]
-    constraints_validated: Dict[str, Any]
-    confidence: float
-    reasoning_notes: List[str]
-    page_number: int = 1
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
-class DocumentReasoning:
-    document_type: str
-    archetype: str
-    organization: str
-    period: str
-    tables: List[Dict[str, Any]]
-    metadata: Dict[str, Any]
-    reasoning_chain: List[str]
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
 
 
 # -------------------- Main Entry Point --------------------

@@ -10,79 +10,20 @@ What we preserve:
 - Block type hints (title, table, paragraph)
 - Line breaks and spacing
 
-What we do NOT do:
-❌ Merge pages
-❌ "Fix" tables
-❌ Guess headers
-❌ Interpret content
 """
-
-import io
+import os
 import logging
 from typing import List, Dict, Any
-from dataclasses import dataclass, asdict, field
-from enum import Enum
 
 from pdf2image import convert_from_bytes
 import pytesseract
 from PIL import Image
 
+from models import BlockType, TextBlock, PageSignal, DocumentSignals
+
 logger = logging.getLogger("PDF_Agent.SignalPreserver")
 
-# Windows Poppler path (required for pdf2image)
-POPPLER_PATH = r"C:\poppler-25.12.0\Library\bin"
-
-
-class BlockType(str, Enum):
-    """Types of content blocks detected"""
-    TITLE = "title"
-    TABLE = "table"
-    PARAGRAPH = "paragraph"
-    HEADER = "header"
-    FOOTER = "footer"
-    LIST = "list"
-    UNKNOWN = "unknown"
-
-
-@dataclass
-class TextBlock:
-    """A single text block with position and content"""
-    text: str
-    confidence: float
-    bbox: Dict[str, int]  # {left, top, width, height}
-    block_num: int
-    line_num: int
-    word_num: int
-    block_type: str = "unknown"
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass 
-class PageSignal:
-    """All signals from a single page"""
-    page_num: int
-    width: int
-    height: int
-    blocks: List[Dict[str, Any]] = field(default_factory=list)
-    raw_text: str = ""
-    word_count: int = 0
-    has_potential_table: bool = False
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
-class DocumentSignals:
-    """Complete signal preservation output"""
-    page_count: int
-    pages: List[Dict[str, Any]] = field(default_factory=list)
-    total_words: int = 0
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+POPPLER_PATH = os.getenv("POPPLER_PATH")
 
 
 def preserve_signals(pdf_bytes: bytes, dpi: int = 300) -> DocumentSignals:
@@ -252,7 +193,7 @@ def _detect_block_type(
     page_width: int, 
     page_height: int,
     page_num: int
-) -> str:
+    ) -> str:
     """
     Heuristic block type detection.
     

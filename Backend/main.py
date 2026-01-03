@@ -16,11 +16,11 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
-from document_classifier import analyze_document
-from signal_preservor import preserve_signals
-from structural_reconstructor import reconstruct_structure
-from document_reasoner import reason_document
-from data_mapper import map_to_excel
+from core.document_classifier import analyze_document
+from core.signal_preservor import preserve_signals
+from core.structural_reconstructor import reconstruct_structure
+from core.document_reasoner import reason_document
+from core.data_mapper import map_to_excel
 
 # -------------------- Logging Configuration --------------------
 logging.basicConfig(
@@ -34,7 +34,6 @@ logger = logging.getLogger("PDF_Agent")
 app = FastAPI(
     title="PDF → Excel Foundational Agent",
     description="Intelligent data mapping with Document Reasoning",
-    version="2.0.0"  # Major version bump for Document Reasoning
 )
 
 app.add_middleware(
@@ -44,23 +43,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# -------------------- Health Check --------------------
-@app.get("/")
-async def root():
-    """Health check endpoint"""
-    return {
-        "status": "ok", 
-        "message": "PDF Agent with Document Reasoning",
-        "version": "2.0.0",
-        "layers": [
-            "Layer 2: OCR Signal Preservation",
-            "Layer 3: Structural Reconstruction",
-            "Layer 5: Document Reasoning (NEW)",
-            "Layer 6: Excel Generation"
-        ]
-    }
 
 
 # -------------------- Layer 0: PDF Upload --------------------
@@ -256,7 +238,3 @@ async def convert_to_excel(file: UploadFile = File(...), dpi: int = 300):
         raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
 
 
-# -------------------- Run with Uvicorn --------------------
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
