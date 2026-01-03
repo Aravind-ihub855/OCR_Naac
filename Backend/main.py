@@ -1,11 +1,12 @@
 """
 PDF → Excel Intelligent Data Mapping (Foundational Agent)
-Layer 0 + Layer 1 + Layer 2 + Layer 3
+Layer 0 + Layer 1 + Layer 2 + Layer 3 + Layer 4
 
 Layer 0: Basic FastAPI entry point
 Layer 1: Document classification (type, pages, tables)
 Layer 2: Signal preservation (OCR, bounding boxes, block types)
 Layer 3: Structural reconstruction (geometry-based table detection)
+Layer 4: Semantic interpretation (LLM-based understanding)
 """
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -15,6 +16,7 @@ import logging
 from document_classifier import analyze_document
 from signal_preservor import preserve_signals
 from structural_reconstructor import reconstruct_structure
+from semantic_interpreter import interpret_semantics
 
 # -------------------- Logging Configuration --------------------
 logging.basicConfig(
@@ -28,7 +30,7 @@ logger = logging.getLogger("PDF_Agent")
 app = FastAPI(
     title="PDF → Excel Foundational Agent",
     description="Intelligent data mapping from complex PDFs to structured Excel",
-    version="0.4.0"  # Updated for Layer 3
+    version="0.5.0"  # Updated for Layer 4
 )
 
 # CORS middleware for frontend integration
@@ -45,7 +47,7 @@ app.add_middleware(
 @app.get("/")
 async def root():
     """Health check endpoint"""
-    return {"status": "ok", "message": "PDF Agent is running", "version": "0.4.0"}
+    return {"status": "ok", "message": "PDF Agent is running", "version": "0.5.0"}
 
 
 # -------------------- Layer 0: PDF Upload --------------------
@@ -75,7 +77,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         "filename": file.filename,
         "size_bytes": file_size,
         "size_kb": round(file_size / 1024, 2),
-        "message": "PDF received. Use /analyze, /extract, or /reconstruct for processing."
+        "message": "PDF received. Use /analyze, /extract, /reconstruct, or /interpret for processing."
     }
 
 
@@ -219,8 +221,70 @@ async def reconstruct_tables(file: UploadFile = File(...), dpi: int = 300):
         raise HTTPException(status_code=500, detail=f"Structural reconstruction failed: {str(e)}")
 
 
+# -------------------- Layer 4: Semantic Interpretation --------------------
+@app.post("/interpret")
+async def interpret_document(file: UploadFile = File(...), dpi: int = 300):
+    """
+    Layer 4: Semantic interpretation using LLM.
+    
+    This endpoint runs the FULL pipeline (Layer 2 → Layer 3 → Layer 4):
+    1. OCR with signal preservation
+    2. Structural reconstruction
+    3. LLM-based semantic interpretation:
+       - Header inference
+       - Column semantic classification
+       - Row normalization
+       - Noise/artifact removal
+       - Table intent detection
+       - Confidence scoring
+    
+    Returns:
+    - tables: Semantically interpreted tables with meaningful names and typed columns
+    - metadata: Document-level metadata (title, organization, year, etc.)
+    - processing_notes: Summary of processing steps
+    
+    Requires GROQ_API_KEY in .env file.
+    """
+    logger.info(f"Interpreting document: {file.filename} (DPI: {dpi})")
+    
+    # Validate file type
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+    
+    # Validate DPI range
+    if dpi < 72 or dpi > 600:
+        raise HTTPException(status_code=400, detail="DPI must be between 72 and 600")
+    
+    try:
+        pdf_bytes = await file.read()
+        
+        # Run Layer 2: Signal preservation
+        logger.info("Running Layer 2: Signal preservation...")
+        signals = preserve_signals(pdf_bytes, dpi=dpi)
+        
+        # Run Layer 3: Structural reconstruction
+        logger.info("Running Layer 3: Structural reconstruction...")
+        structure = reconstruct_structure(signals.to_dict())
+        
+        # Run Layer 4: Semantic interpretation
+        logger.info("Running Layer 4: Semantic interpretation...")
+        semantic = interpret_semantics(structure.to_dict())
+        
+        return {
+            "status": "interpreted",
+            "filename": file.filename,
+            "dpi": dpi,
+            "result": semantic.to_dict()
+        }
+        
+    except Exception as e:
+        logger.error(f"Semantic interpretation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Semantic interpretation failed: {str(e)}")
+
+
 # -------------------- Run with Uvicorn --------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
