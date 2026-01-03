@@ -14,6 +14,7 @@ from dataclasses import dataclass, field, asdict
 
 from langchain_core.prompts import ChatPromptTemplate
 from services.llm import get_groq_llm
+from models import SemanticColumn, SemanticTable, DocumentMetadata, SemanticOutput
 
 logger = logging.getLogger("PDF_Agent.SemanticInterpreter")
 

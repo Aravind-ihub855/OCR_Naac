@@ -76,7 +76,7 @@ export function HomePage() {
                 {/* Footer */}
                 <footer className="border-t border-gray-200 mt-2">
                     <div className="max-w-6xl mx-auto px-6 py-8 text-center text-sm text-gray-400">
-                        <p>PDF2Excel - Intelligent Document Extraction</p>
+                        <p>AI Document Parser - Intelligent Document Extraction</p>
                     </div>
                 </footer>
             </div>

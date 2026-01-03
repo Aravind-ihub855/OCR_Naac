@@ -23,19 +23,13 @@ from models import BlockType, TextBlock, PageSignal, DocumentSignals
 
 logger = logging.getLogger("PDF_Agent.SignalPreserver")
 
-POPPLER_PATH = os.getenv("POPPLER_PATH")
-
+POPPLER_PATH =r"C:\poppler-25.12.0\Library\bin"
 
 def preserve_signals(pdf_bytes: bytes, dpi: int = 300) -> DocumentSignals:
     """
     Extract and preserve all signals from PDF without interpretation.
-    
-    Returns page-wise structure with:
-    - Bounding boxes for all text
-    - Reading order preserved
-    - Block type hints
-    - Raw text per page
     """
+    poppler_path = POPPLER_PATH
     logger.info(f"Starting signal preservation ({len(pdf_bytes)} bytes, {dpi} DPI)")
     
     # Convert PDF to images
@@ -43,7 +37,7 @@ def preserve_signals(pdf_bytes: bytes, dpi: int = 300) -> DocumentSignals:
         images = convert_from_bytes(
             pdf_bytes,
             dpi=dpi,
-            poppler_path=POPPLER_PATH
+            poppler_path=poppler_path
         )
         logger.info(f"Converted to {len(images)} page images")
     except Exception as e:

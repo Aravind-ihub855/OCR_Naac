@@ -24,15 +24,15 @@ from models import DocumentAnalysis
 
 logger = logging.getLogger("PDF_Agent.Classifier")
 
-POPPLER_PATH = os.getenv("POPPLER_PATH")
-
+POPPLER_PATH =r"C:\poppler-25.12.0\Library\bin"
 
 def analyze_document(pdf_bytes: bytes) -> DocumentAnalysis:
     """
     Analyze PDF document to understand its structure.
-    
-    This is Layer 1 - we only classify, we don't extract data.
     """
+    
+    poppler_path = POPPLER_PATH
+
     logger.info(f"Starting document analysis ({len(pdf_bytes)} bytes)")
     
     page_details = []

@@ -11,6 +11,13 @@ Layer 5: Document Reasoning (NEW - archetype detection & understanding)
 Layer 6: Data mapping & Excel generation
 """
 
+import os
+import logging
+from dotenv import load_dotenv
+
+# Load environment variables before any other imports
+load_dotenv()
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware

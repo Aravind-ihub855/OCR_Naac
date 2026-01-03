@@ -28,6 +28,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils.dataframe import dataframe_to_rows
 
+from models import ExcelColumn, ExcelRow, ExcelTable, MappingOutput
+
 logger = logging.getLogger("PDF_Agent.DataMapper")
 
 

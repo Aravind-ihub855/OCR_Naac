@@ -17,6 +17,7 @@ from enum import Enum
 
 from langchain_core.prompts import ChatPromptTemplate
 from services.llm import get_groq_llm
+from models import DocumentArchetype, ARCHETYPE_SCHEMAS, ReasonedTable, DocumentReasoning
 
 logger = logging.getLogger("PDF_Agent.DocumentReasoner")
 

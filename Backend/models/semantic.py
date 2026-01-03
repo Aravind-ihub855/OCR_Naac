@@ -1,4 +1,4 @@
-  """
+"""
 Semantic Interpretation Models - Layer 4
 """
 
