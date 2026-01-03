@@ -10,7 +10,7 @@ export function Header() {
                         <FileSpreadsheet className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-xl font-bold text-gray-900">PDF2Excel</h1>
+                        <h1 className="text-xl font-bold text-gray-900">AI Document Extractor</h1>
                     </div>
                 </div>
             </div>

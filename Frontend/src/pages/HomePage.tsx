@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { Header, FileUpload, ProgressBar, ResultCard } from '../components';
+import { Header, FileUpload, ProgressBar, ResultCard, ExcelPreview } from '../components';
 import { useConversion } from '../hooks';
 
 export function HomePage() {
@@ -8,6 +8,7 @@ export function HomePage() {
         progress,
         message,
         filename,
+        previewData,
         convert,
         download,
         reset
@@ -21,11 +22,10 @@ export function HomePage() {
 
     return (
         <div className="min-h-screen bg-white text-gray-900">
-            {/* Content */}
             <div className="relative z-10">
                 <Header />
 
-                <main className="max-w-4xl mx-auto px-6 py-12">
+                <main className="max-w-5xl mx-auto px-6 py-12">
                     {/* Hero Section */}
                     <section className="text-center mb-12">
                         <h1 className="text-4xl md:text-5xl font-bold mb-4 text-gray-900">
@@ -61,6 +61,16 @@ export function HomePage() {
                             )}
                         </div>
                     </section>
+
+                    {/* Excel Preview Section */}
+                    {status === 'success' && previewData.length > 0 && (
+                        <section className="mb-8">
+                            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                                Preview
+                            </h2>
+                            <ExcelPreview sheets={previewData} />
+                        </section>
+                    )}
                 </main>
 
                 {/* Footer */}
