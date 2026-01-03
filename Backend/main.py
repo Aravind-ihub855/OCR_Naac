@@ -1,13 +1,14 @@
 """
 PDF → Excel Intelligent Data Mapping (Foundational Agent)
-Layer 0 + Layer 1 + Layer 2 + Layer 3 + Layer 4 + Layer 5
+Complete 7-Layer Architecture with Document Reasoning
 
-Layer 0: Basic FastAPI entry point
-Layer 1: Document classification (type, pages, tables)
-Layer 2: Signal preservation (OCR, bounding boxes, block types)
-Layer 3: Structural reconstruction (geometry-based table detection)
-Layer 4: Semantic interpretation (LLM-based understanding)
-Layer 5: Data mapping (Excel-ready output)
+Layer 0: FastAPI entry point
+Layer 1: Document classification
+Layer 2: Signal preservation (OCR)
+Layer 3: Structural reconstruction (geometry)
+Layer 4: Semantic interpretation (basic LLM)
+Layer 5: Document Reasoning (NEW - archetype detection & understanding)
+Layer 6: Data mapping & Excel generation
 """
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -18,7 +19,7 @@ import logging
 from document_classifier import analyze_document
 from signal_preservor import preserve_signals
 from structural_reconstructor import reconstruct_structure
-from semantic_interpreter import interpret_semantics
+from document_reasoner import reason_document
 from data_mapper import map_to_excel
 
 # -------------------- Logging Configuration --------------------
@@ -32,11 +33,10 @@ logger = logging.getLogger("PDF_Agent")
 # -------------------- FastAPI App --------------------
 app = FastAPI(
     title="PDF → Excel Foundational Agent",
-    description="Intelligent data mapping from complex PDFs to structured Excel",
-    version="1.0.0"
+    description="Intelligent data mapping with Document Reasoning",
+    version="2.0.0"  # Major version bump for Document Reasoning
 )
 
-# CORS middleware for frontend integration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -50,36 +50,39 @@ app.add_middleware(
 @app.get("/")
 async def root():
     """Health check endpoint"""
-    return {"status": "ok", "message": "PDF Agent is running", "version": "1.0.0"}
+    return {
+        "status": "ok", 
+        "message": "PDF Agent with Document Reasoning",
+        "version": "2.0.0",
+        "layers": [
+            "Layer 2: OCR Signal Preservation",
+            "Layer 3: Structural Reconstruction",
+            "Layer 5: Document Reasoning (NEW)",
+            "Layer 6: Excel Generation"
+        ]
+    }
 
 
 # -------------------- Layer 0: PDF Upload --------------------
 @app.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
-    """Layer 0: Accept PDF upload and return basic file info."""
-    logger.info(f"Received file: {file.filename}")
-    
+    """Layer 0: Accept PDF upload."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
     
     pdf_bytes = await file.read()
-    file_size = len(pdf_bytes)
-    
     return {
         "status": "received",
         "filename": file.filename,
-        "size_bytes": file_size,
-        "size_kb": round(file_size / 1024, 2),
-        "message": "PDF received. Use /convert for full pipeline."
+        "size_kb": round(len(pdf_bytes) / 1024, 2),
+        "message": "Use /convert for intelligent PDF to Excel conversion"
     }
 
 
 # -------------------- Layer 1: Document Analysis --------------------
 @app.post("/analyze")
 async def analyze_pdf(file: UploadFile = File(...)):
-    """Layer 1: Analyze PDF structure and classify document type."""
-    logger.info(f"Analyzing document: {file.filename}")
-    
+    """Layer 1: Analyze PDF structure."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
     
@@ -95,9 +98,7 @@ async def analyze_pdf(file: UploadFile = File(...)):
 # -------------------- Layer 2: Signal Preservation --------------------
 @app.post("/extract")
 async def extract_signals(file: UploadFile = File(...), dpi: int = 300):
-    """Layer 2: Extract and preserve all signals from PDF (OCR + bounding boxes)."""
-    logger.info(f"Extracting signals from: {file.filename} (DPI: {dpi})")
-    
+    """Layer 2: Extract OCR signals."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
     if dpi < 72 or dpi > 600:
@@ -106,18 +107,16 @@ async def extract_signals(file: UploadFile = File(...), dpi: int = 300):
     try:
         pdf_bytes = await file.read()
         signals = preserve_signals(pdf_bytes, dpi=dpi)
-        return {"status": "extracted", "filename": file.filename, "dpi": dpi, "signals": signals.to_dict()}
+        return {"status": "extracted", "dpi": dpi, "signals": signals.to_dict()}
     except Exception as e:
-        logger.error(f"Signal extraction failed: {e}", exc_info=True)
+        logger.error(f"Extraction failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 # -------------------- Layer 3: Structural Reconstruction --------------------
 @app.post("/reconstruct")
 async def reconstruct_tables(file: UploadFile = File(...), dpi: int = 300):
-    """Layer 3: Reconstruct table structures using geometry-based rules."""
-    logger.info(f"Reconstructing structure from: {file.filename} (DPI: {dpi})")
-    
+    """Layer 3: Reconstruct table structures."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
     if dpi < 72 or dpi > 600:
@@ -127,50 +126,27 @@ async def reconstruct_tables(file: UploadFile = File(...), dpi: int = 300):
         pdf_bytes = await file.read()
         signals = preserve_signals(pdf_bytes, dpi=dpi)
         structure = reconstruct_structure(signals.to_dict())
-        return {"status": "reconstructed", "filename": file.filename, "dpi": dpi, "structure": structure.to_dict()}
+        return {"status": "reconstructed", "structure": structure.to_dict()}
     except Exception as e:
-        logger.error(f"Structural reconstruction failed: {e}", exc_info=True)
+        logger.error(f"Reconstruction failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# -------------------- Layer 4: Semantic Interpretation --------------------
-@app.post("/interpret")
-async def interpret_document(file: UploadFile = File(...), dpi: int = 300):
-    """Layer 4: Semantic interpretation using LLM. Requires GROQ_API_KEY."""
-    logger.info(f"Interpreting document: {file.filename} (DPI: {dpi})")
-    
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
-    if dpi < 72 or dpi > 600:
-        raise HTTPException(status_code=400, detail="DPI must be between 72 and 600")
-    
-    try:
-        pdf_bytes = await file.read()
-        signals = preserve_signals(pdf_bytes, dpi=dpi)
-        structure = reconstruct_structure(signals.to_dict())
-        semantic = interpret_semantics(structure.to_dict())
-        return {"status": "interpreted", "filename": file.filename, "dpi": dpi, "result": semantic.to_dict()}
-    except Exception as e:
-        logger.error(f"Semantic interpretation failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# -------------------- Layer 5: Full Pipeline → Excel --------------------
-@app.post("/convert")
-async def convert_to_excel(file: UploadFile = File(...), dpi: int = 300):
+# -------------------- Layer 5: Document Reasoning (NEW) --------------------
+@app.post("/reason")
+async def reason_about_document(file: UploadFile = File(...), dpi: int = 300):
     """
-    FULL PIPELINE: PDF → Excel conversion.
+    Layer 5: Document Reasoning - The intelligence layer.
     
-    Runs all 5 layers:
-    1. Layer 2: OCR with signal preservation
-    2. Layer 3: Structural reconstruction
-    3. Layer 4: Semantic interpretation (LLM)
-    4. Layer 5: Data mapping and Excel generation
+    This endpoint:
+    1. Detects document archetype (Income & Expenditure, Balance Sheet, etc.)
+    2. Applies archetype-specific schemas
+    3. Understands dual-column layouts
+    4. Returns semantically reasoned tables
     
-    Returns Excel file (.xlsx) with formatted tables.
-    Requires GROQ_API_KEY in .env file.
+    Requires GROQ_API_KEY.
     """
-    logger.info(f"=== FULL PIPELINE: Converting {file.filename} to Excel ===")
+    logger.info(f"=== Document Reasoning: {file.filename} ===")
     
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
@@ -181,28 +157,93 @@ async def convert_to_excel(file: UploadFile = File(...), dpi: int = 300):
         pdf_bytes = await file.read()
         
         # Layer 2: Signal preservation
-        logger.info("Layer 2: Signal preservation...")
         signals = preserve_signals(pdf_bytes, dpi=dpi)
         
         # Layer 3: Structural reconstruction
-        logger.info("Layer 3: Structural reconstruction...")
         structure = reconstruct_structure(signals.to_dict())
         
-        # Layer 4: Semantic interpretation
-        logger.info("Layer 4: Semantic interpretation...")
-        semantic = interpret_semantics(structure.to_dict())
+        # Layer 5: Document Reasoning
+        reasoning = reason_document(signals.to_dict(), structure.to_dict())
         
-        # Layer 5: Data mapping and Excel generation
-        logger.info("Layer 5: Data mapping and Excel generation...")
-        mapping_result, excel_file = map_to_excel(semantic.to_dict())
+        return {
+            "status": "reasoned",
+            "filename": file.filename,
+            "archetype": reasoning.archetype,
+            "document_type": reasoning.document_type,
+            "reasoning": reasoning.to_dict()
+        }
         
-        # Generate output filename
+    except Exception as e:
+        logger.error(f"Reasoning failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------- Full Pipeline: Convert with Reasoning --------------------
+@app.post("/convert")
+async def convert_to_excel(file: UploadFile = File(...), dpi: int = 300):
+    """
+    FULL PIPELINE with Document Reasoning: PDF → Excel
+    
+    Pipeline:
+    1. Layer 2: OCR with signal preservation
+    2. Layer 3: Structural reconstruction
+    3. Layer 5: Document Reasoning (archetype detection)
+    4. Layer 6: Excel generation with proper formatting
+    
+    Returns Excel file with:
+    - Metadata sheet
+    - Properly formatted financial tables
+    - Dual-column layouts preserved
+    
+    Requires GROQ_API_KEY.
+    """
+    logger.info(f"=== INTELLIGENT PIPELINE: {file.filename} ===")
+    
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+    if dpi < 72 or dpi > 600:
+        raise HTTPException(status_code=400, detail="DPI must be between 72 and 600")
+    
+    try:
+        pdf_bytes = await file.read()
+        
+        # Layer 2: Signal preservation
+        logger.info("Layer 2: OCR Signal Preservation...")
+        signals = preserve_signals(pdf_bytes, dpi=dpi)
+        signals_dict = signals.to_dict()
+        
+        # Layer 3: Structural reconstruction
+        logger.info("Layer 3: Structural Reconstruction...")
+        structure = reconstruct_structure(signals_dict)
+        structure_dict = structure.to_dict()
+        
+        # Layer 5: Document Reasoning (THE KEY LAYER)
+        logger.info("Layer 5: Document Reasoning...")
+        reasoning = reason_document(signals_dict, structure_dict)
+        
+        logger.info(f"  → Detected archetype: {reasoning.archetype}")
+        logger.info(f"  → Document type: {reasoning.document_type}")
+        logger.info(f"  → Tables found: {len(reasoning.tables)}")
+        
+        # Convert reasoning output to semantic format for data mapper
+        semantic_output = {
+            "tables": reasoning.tables,
+            "metadata": reasoning.metadata,
+            "processing_notes": reasoning.reasoning_chain
+        }
+        
+        # Layer 6: Data mapping and Excel generation
+        logger.info("Layer 6: Excel Generation...")
+        mapping_result, excel_file = map_to_excel(semantic_output)
+        
         output_filename = file.filename.replace('.pdf', '.xlsx').replace('.PDF', '.xlsx')
         if not output_filename.endswith('.xlsx'):
             output_filename += '.xlsx'
         
         logger.info(f"=== PIPELINE COMPLETE: {output_filename} ===")
-        logger.info(f"Summary: {mapping_result.validation_summary}")
+        logger.info(f"  → Archetype: {reasoning.archetype}")
+        logger.info(f"  → Tables: {len(reasoning.tables)}")
+        logger.info(f"  → Rows: {mapping_result.validation_summary.get('total_rows', 0)}")
         
         return StreamingResponse(
             excel_file,
@@ -212,7 +253,7 @@ async def convert_to_excel(file: UploadFile = File(...), dpi: int = 300):
         
     except Exception as e:
         logger.error(f"Conversion failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"PDF to Excel conversion failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
 
 
 # -------------------- Run with Uvicorn --------------------

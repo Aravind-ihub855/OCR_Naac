@@ -1,22 +1,14 @@
 """
-Semantic Interpretation Module - Layer 4
+Semantic Interpretation Module - Layer 4 (Enhanced)
 
 This is where AI enters the pipeline.
 Uses LLM to understand MEANING, not layout.
 
-Responsibilities:
-- Header inference
-- Column semantic classification
-- Row normalization
-- Noise/artifact removal
-- Table intent detection
-- Confidence scoring
-
-What Layer 4 does NOT do:
-❌ OCR
-❌ Geometry detection
-❌ Layout parsing
-❌ Table structure detection
+ENHANCED for:
+- Side-by-side financial statements (Income | Amount | Expenditure | Amount)
+- Indian number formatting (e.g., 18,18,25,263)
+- Complex multi-page financial documents
+- Balance sheets with dual columns
 """
 
 import json
@@ -38,16 +30,8 @@ class SemanticColumn:
     """A semantically understood column"""
     name: str
     original_name: Optional[str]
-    data_type: str  # "string", "number", "date", "currency", "identifier"
+    data_type: str
     confidence: float
-
-
-@dataclass
-class SemanticRow:
-    """A normalized row with semantic understanding"""
-    data: Dict[str, Any]
-    is_noise: bool = False
-    noise_type: Optional[str] = None  # "footer", "signature", "page_number", etc.
 
 
 @dataclass
@@ -55,7 +39,7 @@ class SemanticTable:
     """A fully interpreted table"""
     table_id: str
     table_name: str
-    table_intent: str  # "income_expenditure", "balance_sheet", "summary", etc.
+    table_intent: str
     confidence: float
     columns: List[Dict[str, Any]]
     rows: List[Dict[str, Any]]
@@ -70,10 +54,14 @@ class DocumentMetadata:
     """Document-level extracted metadata"""
     title: Optional[str] = None
     organization: Optional[str] = None
+    address: Optional[str] = None
     department: Optional[str] = None
     year: Optional[str] = None
     period: Optional[str] = None
     document_type: Optional[str] = None
+    auditor: Optional[str] = None
+    place: Optional[str] = None
+    date: Optional[str] = None
     confidence: float = 0.0
     
     def to_dict(self) -> Dict[str, Any]:
@@ -94,11 +82,7 @@ class SemanticOutput:
 # -------------------- Main Entry Point --------------------
 
 def interpret_semantics(structure: Dict[str, Any]) -> SemanticOutput:
-    """
-    Main entry point for Layer 4.
-    
-    Takes Layer 3 structural output and produces semantic interpretation.
-    """
+    """Main entry point for Layer 4."""
     logger.info("Starting semantic interpretation (Layer 4)")
     
     tables = structure.get('tables', [])
@@ -118,30 +102,27 @@ def interpret_semantics(structure: Dict[str, Any]) -> SemanticOutput:
         llm = get_groq_llm()
     except ValueError as e:
         logger.error(f"LLM initialization failed: {e}")
-        # Return structure as-is without semantic enhancement
         return _fallback_output(tables, metadata_blocks)
     
     processing_notes = []
     
-    # Step 1: Extract document metadata from metadata blocks
+    # Step 1: Extract document metadata
     logger.info("Extracting document metadata...")
-    doc_metadata = _extract_document_metadata(llm, metadata_blocks)
+    doc_metadata = _extract_document_metadata(llm, metadata_blocks, tables)
     processing_notes.append(f"Extracted metadata with {doc_metadata.confidence:.0%} confidence")
     
-    # Step 2: Interpret each table
-    interpreted_tables = []
-    for idx, table in enumerate(tables):
-        logger.info(f"Interpreting table {idx + 1}/{len(tables)}...")
-        semantic_table = _interpret_table(llm, table, doc_metadata, metadata_blocks)
-        interpreted_tables.append(semantic_table.to_dict())
-        processing_notes.append(
-            f"Table '{semantic_table.table_name}' interpreted with {semantic_table.confidence:.0%} confidence"
-        )
+    # Step 2: Merge all table data and interpret as a whole document
+    # This is crucial for financial documents that span multiple pages
+    logger.info("Interpreting document tables...")
+    interpreted_tables = _interpret_financial_document(llm, tables, doc_metadata, metadata_blocks)
     
-    logger.info(f"Semantic interpretation complete: {len(interpreted_tables)} tables processed")
+    for table in interpreted_tables:
+        processing_notes.append(f"Table '{table.table_name}' with {len(table.rows)} rows")
+    
+    logger.info(f"Semantic interpretation complete: {len(interpreted_tables)} tables")
     
     return SemanticOutput(
-        tables=interpreted_tables,
+        tables=[t.to_dict() for t in interpreted_tables],
         metadata=doc_metadata.to_dict(),
         processing_notes=processing_notes
     )
@@ -149,54 +130,75 @@ def interpret_semantics(structure: Dict[str, Any]) -> SemanticOutput:
 
 # -------------------- Metadata Extraction --------------------
 
-def _extract_document_metadata(llm, metadata_blocks: List[Dict[str, Any]]) -> DocumentMetadata:
+def _extract_document_metadata(
+    llm, 
+    metadata_blocks: List[Dict[str, Any]],
+    tables: List[Dict[str, Any]]
+) -> DocumentMetadata:
     """Extract document-level metadata using LLM"""
     
-    if not metadata_blocks:
-        return DocumentMetadata(confidence=0.0)
+    # Combine all text sources
+    all_text_parts = []
     
-    # Combine metadata text
-    metadata_text = "\n".join([
-        f"[{b.get('type', 'unknown')}] {b.get('text', '')}"
-        for b in metadata_blocks[:20]  # Limit to first 20 blocks
-    ])
+    # From metadata blocks
+    for b in metadata_blocks[:30]:
+        all_text_parts.append(b.get('text', ''))
+    
+    # From table raw text (first few rows)
+    for table in tables[:2]:
+        for row in table.get('rows', [])[:5]:
+            cells = row.get('cells', [])
+            all_text_parts.extend([str(c) for c in cells if c])
+    
+    combined_text = "\n".join(all_text_parts)
     
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a document metadata extraction agent.
+        ("system", """You are a document metadata extraction agent for Indian financial documents.
 
-Extract metadata from the provided text blocks.
+Extract metadata from the provided OCR text. This may be from:
+- Income & Expenditure Accounts
+- Balance Sheets
+- Fixed Asset Schedules
+- NAAC Reports
+- Audit Reports
 
-Return ONLY valid JSON in this exact format:
+Return ONLY valid JSON:
 {{
-  "title": "Document title or null",
-  "organization": "Organization name or null",
-  "department": "Department name or null",
-  "year": "Year or fiscal year (e.g., '2021-2022') or null",
-  "period": "Time period (e.g., 'For the year ended 31.03.2021') or null",
-  "document_type": "Type (e.g., 'Financial Statement', 'NAAC Report', 'Audit Report') or null",
+  "title": "Full document title",
+  "organization": "Organization/College name",
+  "address": "Full address if present",
+  "year": "Financial year (e.g., '2020-2021')",
+  "period": "Period description (e.g., 'For the year ended 31.03.2021')",
+  "document_type": "Income and Expenditure Account | Balance Sheet | Fixed Assets Schedule | other",
+  "auditor": "Auditor name and firm if present",
+  "place": "Place of signing",
+  "date": "Date of document",
   "confidence": 0.0 to 1.0
 }}
 
 Rules:
 - Extract ONLY what is explicitly stated
-- Do NOT invent or guess data
-- Set confidence based on clarity of extraction
-- Return null for missing fields"""),
-        ("human", "Text blocks:\n{text}")
+- For organization, look for college/institution names
+- Indian format: dates as DD.MM.YYYY, amounts with Indian comma notation"""),
+        ("human", "OCR Text:\n{text}")
     ])
     
     try:
-        formatted = prompt.format_messages(text=metadata_text)
+        formatted = prompt.format_messages(text=combined_text[:4000])
         response = llm.invoke(formatted)
         result = _parse_json_response(response.content)
         
         return DocumentMetadata(
             title=result.get('title'),
             organization=result.get('organization'),
+            address=result.get('address'),
             department=result.get('department'),
             year=result.get('year'),
             period=result.get('period'),
             document_type=result.get('document_type'),
+            auditor=result.get('auditor'),
+            place=result.get('place'),
+            date=result.get('date'),
             confidence=result.get('confidence', 0.5)
         )
     except Exception as e:
@@ -204,148 +206,139 @@ Rules:
         return DocumentMetadata(confidence=0.0)
 
 
-# -------------------- Table Interpretation --------------------
+# -------------------- Financial Document Interpretation --------------------
 
-def _interpret_table(
+def _interpret_financial_document(
     llm, 
-    table: Dict[str, Any], 
+    tables: List[Dict[str, Any]], 
     doc_metadata: DocumentMetadata,
     metadata_blocks: List[Dict[str, Any]]
-) -> SemanticTable:
-    """Interpret a single table semantically"""
+) -> List[SemanticTable]:
+    """
+    Interpret financial document tables.
     
-    table_id = table.get('table_id', 'unknown')
-    columns = table.get('columns', [])
-    header_row = table.get('header_row', [])
-    rows = table.get('rows', [])
-    page_start = table.get('page_start', 1)
-    page_end = table.get('page_end', 1)
+    Handles special cases:
+    - Income & Expenditure (dual-column: Expenditure | Amount | Income | Amount)
+    - Balance Sheet (dual-column: Liabilities | Amount | Assets | Amount)
+    - Fixed Assets Schedule (multi-column depreciation table)
+    """
     
-    # Prepare context for LLM
-    context = _build_table_context(table, doc_metadata, metadata_blocks)
+    # Collect all raw text from tables
+    all_raw_text = []
+    for table in tables:
+        for row in table.get('rows', []):
+            cells = row.get('cells', [])
+            row_text = " | ".join(str(c) for c in cells if c)
+            if row_text.strip():
+                all_raw_text.append(row_text)
+    
+    raw_content = "\n".join(all_raw_text)
+    
+    # Also include metadata blocks for context
+    context_text = "\n".join([b.get('text', '') for b in metadata_blocks[:20]])
+    
+    doc_type = doc_metadata.document_type or "Financial Statement"
     
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a table semantic interpretation agent.
+        ("system", """You are an expert financial document parser for Indian educational institutions.
 
-You are given a reconstructed table from OCR. Your job is to:
-1. Infer meaningful column headers
-2. Classify column data types
-3. Normalize row data
-4. Identify noise rows (footers, signatures, totals to exclude)
-5. Determine table intent/purpose
+You are given raw OCR text from a scanned financial document. Your task is to RECONSTRUCT the original table structure accurately.
 
-Return ONLY valid JSON in this exact format:
+CRITICAL: Indian financial statements often have SIDE-BY-SIDE layouts:
+
+INCOME & EXPENDITURE ACCOUNT format:
+| Expenditure | Amount (Rs.) | Income | Amount (Rs.) |
+| Salary | 18,18,25,263 | Fees Receipts | 20,20,50,837 |
+
+BALANCE SHEET format:
+| Liabilities | Amount (Rs.P) | Assets | Amount (Rs.P) |
+| Capital Account | 50,00,000 | Fixed Assets | 9,36,10,338 |
+
+Return ONLY valid JSON with this structure:
 {{
-  "table_name": "Meaningful table name",
-  "table_intent": "income_expenditure | balance_sheet | summary | data_table | other",
-  "confidence": 0.0 to 1.0,
-  "columns": [
+  "tables": [
     {{
-      "name": "Column name",
-      "original_name": "Original header if different or null",
-      "data_type": "string | number | currency | date | identifier",
-      "confidence": 0.0 to 1.0
-    }}
-  ],
-  "rows": [
-    {{
-      "data": {{"Column1": "value1", "Column2": "value2"}},
-      "is_noise": false,
-      "noise_type": null
+      "table_name": "Income and Expenditure Account",
+      "table_intent": "income_expenditure",
+      "columns": [
+        {{"name": "Expenditure", "data_type": "string"}},
+        {{"name": "Expenditure Amount (Rs.)", "data_type": "currency"}},
+        {{"name": "Income", "data_type": "string"}},
+        {{"name": "Income Amount (Rs.)", "data_type": "currency"}}
+      ],
+      "rows": [
+        {{
+          "data": {{
+            "Expenditure": "Salary",
+            "Expenditure Amount (Rs.)": "18,18,25,263",
+            "Income": "Fees Receipts",
+            "Income Amount (Rs.)": "20,20,50,837"
+          }},
+          "is_noise": false
+        }}
+      ]
     }}
   ]
 }}
 
 CRITICAL RULES:
-- Do NOT invent data
-- Do NOT change numeric values
-- Do NOT guess missing values
-- Keep original numbers exactly as they appear
-- Empty cells should be empty strings ""
-- If a row is a footer/signature/total, mark is_noise=true
-- Column names should be semantic (e.g., "Amount (Rs.)" not "Column 2")"""),
-        ("human", "{context}")
+1. PRESERVE Indian number format exactly (e.g., 18,18,25,263 NOT 181825263)
+2. For dual-column tables, create 4 columns (Left Description, Left Amount, Right Description, Right Amount)
+3. Match expenditure items with their amounts on the LEFT side
+4. Match income items with their amounts on the RIGHT side
+5. Empty cells should be ""
+6. Include TOTAL rows with is_noise: false (they are important)
+7. Mark signature/footer/auditor rows as is_noise: true
+8. Extract ALL data rows - do not skip any
+9. If the document has multiple tables (e.g., Income & Expenditure + Balance Sheet), create separate table entries
+10. For Fixed Assets schedule, preserve all columns including depreciation details"""),
+        ("human", """Document Type: {doc_type}
+Organization: {org}
+Period: {period}
+
+CONTEXT (headers/titles):
+{context}
+
+RAW TABLE DATA:
+{raw_data}
+
+Parse this into structured tables. Preserve ALL data and Indian number formatting.""")
     ])
     
     try:
-        formatted = prompt.format_messages(context=context)
+        formatted = prompt.format_messages(
+            doc_type=doc_type,
+            org=doc_metadata.organization or "Unknown",
+            period=doc_metadata.period or doc_metadata.year or "Unknown",
+            context=context_text[:1000],
+            raw_data=raw_content[:6000]  # Larger context for financial docs
+        )
+        
         response = llm.invoke(formatted)
         result = _parse_json_response(response.content)
         
-        # Build semantic table
-        return SemanticTable(
-            table_id=table_id,
-            table_name=result.get('table_name', f'Table {table_id}'),
-            table_intent=result.get('table_intent', 'data_table'),
-            confidence=result.get('confidence', 0.5),
-            columns=result.get('columns', []),
-            rows=result.get('rows', []),
-            page_range=[page_start, page_end]
-        )
+        interpreted_tables = []
+        for idx, table_data in enumerate(result.get('tables', [])):
+            table = SemanticTable(
+                table_id=f"table_{idx + 1}",
+                table_name=table_data.get('table_name', f'Table {idx + 1}'),
+                table_intent=table_data.get('table_intent', 'financial'),
+                confidence=0.85,
+                columns=table_data.get('columns', []),
+                rows=table_data.get('rows', []),
+                page_range=[1, len(tables)]
+            )
+            interpreted_tables.append(table)
+        
+        if not interpreted_tables:
+            # Fallback to basic interpretation
+            return [_fallback_table(t) for t in tables]
+        
+        return interpreted_tables
         
     except Exception as e:
-        logger.warning(f"Table interpretation failed for {table_id}: {e}")
-        return _fallback_table(table)
-
-
-def _build_table_context(
-    table: Dict[str, Any], 
-    doc_metadata: DocumentMetadata,
-    metadata_blocks: List[Dict[str, Any]]
-) -> str:
-    """Build context string for LLM interpretation"""
-    
-    parts = []
-    
-    # Document metadata context
-    if doc_metadata.title or doc_metadata.organization:
-        parts.append("DOCUMENT CONTEXT:")
-        if doc_metadata.title:
-            parts.append(f"  Title: {doc_metadata.title}")
-        if doc_metadata.organization:
-            parts.append(f"  Organization: {doc_metadata.organization}")
-        if doc_metadata.year:
-            parts.append(f"  Year: {doc_metadata.year}")
-        parts.append("")
-    
-    # Nearby metadata blocks (potential table titles)
-    page_start = table.get('page_start', 1)
-    nearby_blocks = [
-        b for b in metadata_blocks 
-        if b.get('page') == page_start and b.get('type') in ['title', 'header']
-    ]
-    if nearby_blocks:
-        parts.append("NEARBY HEADERS:")
-        for b in nearby_blocks[:3]:
-            parts.append(f"  - {b.get('text', '')}")
-        parts.append("")
-    
-    # Table structure
-    parts.append("TABLE STRUCTURE:")
-    
-    header_row = table.get('header_row', [])
-    if header_row:
-        parts.append(f"  Detected Headers: {header_row}")
-    else:
-        parts.append("  Headers: Not detected (infer from data)")
-    
-    columns = table.get('columns', [])
-    parts.append(f"  Column Count: {len(columns)}")
-    parts.append("")
-    
-    # Table data (first 15 rows as sample)
-    rows = table.get('rows', [])
-    parts.append(f"TABLE DATA ({len(rows)} total rows, showing first 15):")
-    
-    for row in rows[:15]:
-        cells = row.get('cells', [])
-        row_str = " | ".join(str(c)[:50] for c in cells)  # Truncate long cells
-        parts.append(f"  {row_str}")
-    
-    if len(rows) > 15:
-        parts.append(f"  ... and {len(rows) - 15} more rows")
-    
-    return "\n".join(parts)
+        logger.error(f"Financial document interpretation failed: {e}")
+        return [_fallback_table(t) for t in tables]
 
 
 # -------------------- Utility Functions --------------------
@@ -358,7 +351,12 @@ def _parse_json_response(content: str) -> Dict[str, Any]:
     if "```json" in content:
         content = content.split("```json")[1].split("```")[0].strip()
     elif "```" in content:
-        content = content.split("```")[1].split("```")[0].strip()
+        parts = content.split("```")
+        if len(parts) >= 2:
+            content = parts[1].strip()
+    
+    # Clean up common issues
+    content = content.replace('\n', ' ').replace('\r', '')
     
     try:
         return json.loads(content)
@@ -377,7 +375,7 @@ def _fallback_output(
     
     return SemanticOutput(
         tables=fallback_tables,
-        metadata={"confidence": 0, "note": "LLM unavailable, using raw structure"},
+        metadata={"confidence": 0, "note": "LLM unavailable"},
         processing_notes=["Semantic interpretation skipped - LLM unavailable"]
     )
 
@@ -389,20 +387,29 @@ def _fallback_table(table: Dict[str, Any]) -> SemanticTable:
     rows = table.get('rows', [])
     columns = table.get('columns', [])
     
-    # Use headers if available, else generate column names
-    if header_row:
-        col_names = header_row
-    else:
-        col_names = [f"Column_{i+1}" for i in range(len(columns))]
+    # Determine column count from data
+    max_cols = 0
+    for row in rows:
+        cells = row.get('cells', [])
+        max_cols = max(max_cols, len(cells))
     
-    # Convert rows to semantic format
+    if not max_cols and columns:
+        max_cols = len(columns)
+    
+    # Use headers if available
+    if header_row and len(header_row) >= max_cols:
+        col_names = header_row[:max_cols]
+    else:
+        col_names = [f"Column_{i+1}" for i in range(max_cols)]
+    
+    # Convert rows
     semantic_rows = []
     for row in rows:
         cells = row.get('cells', [])
         data = {}
         for i, col_name in enumerate(col_names):
             if i < len(cells):
-                data[col_name] = cells[i]
+                data[col_name] = cells[i] if cells[i] else ""
             else:
                 data[col_name] = ""
         semantic_rows.append({
@@ -415,7 +422,7 @@ def _fallback_table(table: Dict[str, Any]) -> SemanticTable:
         table_id=table_id,
         table_name=f"Table {table_id}",
         table_intent="data_table",
-        confidence=0.3,  # Low confidence for fallback
+        confidence=0.3,
         columns=[
             {"name": name, "original_name": name, "data_type": "string", "confidence": 0.3}
             for name in col_names

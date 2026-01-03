@@ -303,7 +303,9 @@ def _try_explode_row(data: Dict[str, Any], columns: List[Dict[str, Any]]) -> Opt
 
 
 def _clean_row_data(data: Dict[str, Any], columns: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Clean and validate row data according to column types"""
+    """Clean and validate row data according to column types.
+    For financial tables, preserve string values that look like numbers
+    but keep them readable."""
     cleaned = {}
     
     for col in columns:
@@ -311,31 +313,54 @@ def _clean_row_data(data: Dict[str, Any], columns: List[Dict[str, Any]]) -> Dict
         dtype = col['data_type']
         value = data.get(name, '')
         
-        if dtype == 'number':
-            cleaned[name] = _parse_number(value)
+        if value is None:
+            cleaned[name] = '' if dtype == 'string' else None
+        elif dtype == 'number' or dtype == 'currency':
+            # Try to parse as number, but keep string if it fails
+            parsed = _parse_indian_number(value)
+            cleaned[name] = parsed if parsed is not None else str(value).strip()
         else:
             cleaned[name] = str(value).strip() if value else ''
     
     return cleaned
 
 
-def _parse_number(value: Any) -> Optional[float]:
-    """Parse a number from various formats"""
+def _parse_indian_number(value: Any) -> Optional[float]:
+    """
+    Parse a number from Indian format (e.g., 18,18,25,263).
+    Returns float for valid numbers, None for invalid.
+    """
     if value is None or value == '':
         return None
     
     if isinstance(value, (int, float)):
         return float(value)
     
-    # Remove currency symbols and spaces
-    value = str(value)
-    value = re.sub(r'[₹$€£¥\s]', '', value)
+    value = str(value).strip()
     
-    # Handle Indian number format (e.g., 8,18,25,263)
+    # Skip if clearly not a number
+    if not value or value in ['-', 'nil', 'Nil', 'NIL']:
+        return None
+    
+    # Remove currency symbols, spaces, and common prefixes
+    value = re.sub(r'[₹$€£¥\s]', '', value)
+    value = value.replace('Rs.', '').replace('RS.', '').replace('rs.', '')
+    
+    # Handle parentheses for negative numbers
+    is_negative = value.startswith('(') and value.endswith(')')
+    if is_negative:
+        value = value[1:-1]
+    
+    # Handle Indian number format (e.g., 18,18,25,263)
+    # Remove all commas
     value = value.replace(',', '')
     
+    # Handle trailing .00 or .P (paisa)
+    value = re.sub(r'\.P$', '', value, flags=re.IGNORECASE)
+    
     try:
-        return float(value)
+        result = float(value)
+        return -result if is_negative else result
     except ValueError:
         return None
 
@@ -387,6 +412,22 @@ def _finalize_noise(rows: List[ExcelRow]) -> List[ExcelRow]:
 
 # -------------------- Validation --------------------
 
+def _safe_numeric(value: Any) -> float:
+    """Safely extract numeric value, returning 0 for non-numeric types"""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        # Try to parse string as number
+        try:
+            cleaned = value.replace(',', '').replace('₹', '').strip()
+            return float(cleaned) if cleaned else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+    return 0.0
+
+
 def _validate_totals(rows: List[ExcelRow], columns: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Validate that totals match sum of rows.
@@ -400,7 +441,7 @@ def _validate_totals(rows: List[ExcelRow], columns: List[Dict[str, Any]]) -> Dic
     }
     
     # Find numeric columns
-    num_columns = [c['name'] for c in columns if c['data_type'] == 'number']
+    num_columns = [c['name'] for c in columns if c['data_type'] in ('number', 'currency')]
     
     if not num_columns:
         validation['confidence'] = 0.5
@@ -411,15 +452,15 @@ def _validate_totals(rows: List[ExcelRow], columns: List[Dict[str, Any]]) -> Dic
         data_rows = [r for r in rows if not r.is_total]
         total_rows = [r for r in rows if r.is_total]
         
-        # Sum data rows
+        # Sum data rows (safely handle mixed types)
         calculated_sum = sum(
-            r.data.get(col_name, 0) or 0 
+            _safe_numeric(r.data.get(col_name, 0))
             for r in data_rows
         )
         
         # Check against total rows
         for total_row in total_rows:
-            declared_total = total_row.data.get(col_name, 0) or 0
+            declared_total = _safe_numeric(total_row.data.get(col_name, 0))
             
             if declared_total > 0:
                 validation['total_rows_found'] += 1
@@ -529,9 +570,10 @@ def _create_table_sheet(wb: Workbook, table: ExcelTable):
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
             cell.border = thin_border
             
-            # Apply number formatting
-            if column.data_type == 'number' and isinstance(value, (int, float)):
-                cell.number_format = '#,##0.00'
+            # Apply number formatting (Indian format: ##,##,##0.00)
+            if column.data_type in ('number', 'currency') and isinstance(value, (int, float)):
+                # Use Indian number format for large numbers
+                cell.number_format = '[>=10000000]##\,##\,##\,##0;[>=100000]##\,##\,##0;#,##0'
             
             # Highlight total rows
             if row.is_total:
