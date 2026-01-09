@@ -14,3 +14,4 @@ pytesseract
 langchain-core
 langchain-groq
 pdfplumber
+unstructured

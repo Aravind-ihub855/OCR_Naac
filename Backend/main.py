@@ -28,6 +28,9 @@ from core.signal_preservor import preserve_signals
 from core.structural_reconstructor import reconstruct_structure
 from core.document_reasoner import reason_document
 from core.data_mapper import map_to_excel
+from core.universal_extractor import extract_robust
+from core.geometric_reconstructor import reconstruct_geometric
+from core.simple_excel import generate_excel_geometric
 
 # -------------------- Logging Configuration --------------------
 logging.basicConfig(
@@ -245,3 +248,47 @@ async def convert_to_excel(file: UploadFile = File(...), dpi: int = 300):
         raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
 
 
+# -------------------- Robust Extraction (Non-AI) --------------------
+@app.post("/robust-extract")
+async def robust_extract(file: UploadFile = File(...)):
+    """
+    Robust extraction using pdfplumber + Tesseract.
+    No AI involved. Returns raw text/table data.
+    """
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+    
+    try:
+        pdf_bytes = await file.read()
+        result = extract_robust(pdf_bytes)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Robust extraction failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/reconstruct-geometric")
+async def reconstruct_geometric_api(file: UploadFile = File(...), dpi: int = 300):
+    """
+    Geometric reconstruction from granual signals.
+    NON-AI.
+    """
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+    
+    try:
+        pdf_bytes = await file.read()
+        # 1. Get granular signals (Output 2)
+        signals = preserve_signals(pdf_bytes, dpi=dpi)
+        
+        # 2. Reconstruct geometrically
+        result = reconstruct_geometric(signals.to_dict())
+        
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Geometric reconstruction failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

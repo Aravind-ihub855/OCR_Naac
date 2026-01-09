@@ -85,7 +85,9 @@ def _extract_page_signals(image: Image.Image, page_num: int) -> PageSignal:
     raw_text_parts = []
     word_count = 0
     current_block = None
-    block_texts = {}  # block_num -> list of words
+    word_count = 0
+    current_block = None
+    block_texts = {}  # (block_num, line_num) -> data
     
     # Process OCR output
     n_boxes = len(ocr_data['text'])
@@ -102,9 +104,11 @@ def _extract_page_signals(image: Image.Image, page_num: int) -> PageSignal:
         line_num = ocr_data['line_num'][i]
         word_num = ocr_data['word_num'][i]
         
-        # Collect words by block
-        if block_num not in block_texts:
-            block_texts[block_num] = {
+        # Collect words by line (block + line)
+        line_key = (block_num, line_num)
+        
+        if line_key not in block_texts:
+            block_texts[line_key] = {
                 'words': [],
                 'bbox': {
                     'left': ocr_data['left'][i],
@@ -112,42 +116,47 @@ def _extract_page_signals(image: Image.Image, page_num: int) -> PageSignal:
                     'width': ocr_data['width'][i],
                     'height': ocr_data['height'][i]
                 },
-                'confidences': []
+                'confidences': [],
+                'block_num': block_num,
+                'line_num': line_num
             }
         
-        block_texts[block_num]['words'].append(text)
-        block_texts[block_num]['confidences'].append(conf)
+        block_texts[line_key]['words'].append(text)
+        block_texts[line_key]['confidences'].append(conf)
         
-        # Expand bounding box to encompass all words in block
-        block_texts[block_num]['bbox']['left'] = min(
-            block_texts[block_num]['bbox']['left'], 
+        # Expand bounding box to encompass all words in line
+        block_texts[line_key]['bbox']['left'] = min(
+            block_texts[line_key]['bbox']['left'], 
             ocr_data['left'][i]
         )
-        block_texts[block_num]['bbox']['top'] = min(
-            block_texts[block_num]['bbox']['top'], 
+        block_texts[line_key]['bbox']['top'] = min(
+            block_texts[line_key]['bbox']['top'], 
             ocr_data['top'][i]
         )
         
         right = ocr_data['left'][i] + ocr_data['width'][i]
         bottom = ocr_data['top'][i] + ocr_data['height'][i]
         
-        current_right = block_texts[block_num]['bbox']['left'] + block_texts[block_num]['bbox']['width']
-        current_bottom = block_texts[block_num]['bbox']['top'] + block_texts[block_num]['bbox']['height']
+        current_right = block_texts[line_key]['bbox']['left'] + block_texts[line_key]['bbox']['width']
+        current_bottom = block_texts[line_key]['bbox']['top'] + block_texts[line_key]['bbox']['height']
         
         if right > current_right:
-            block_texts[block_num]['bbox']['width'] = right - block_texts[block_num]['bbox']['left']
+            block_texts[line_key]['bbox']['width'] = right - block_texts[line_key]['bbox']['left']
         if bottom > current_bottom:
-            block_texts[block_num]['bbox']['height'] = bottom - block_texts[block_num]['bbox']['top']
+            block_texts[line_key]['bbox']['height'] = bottom - block_texts[line_key]['bbox']['top']
         
         word_count += 1
     
     # Convert block data to structured blocks
-    for block_num in sorted(block_texts.keys()):
-        block_data = block_texts[block_num]
+    # Sort by block_num then line_num for natural reading order
+    sorted_keys = sorted(block_texts.keys(), key=lambda k: (k[0], k[1]))
+    
+    for key in sorted_keys:
+        block_data = block_texts[key]
         block_text = ' '.join(block_data['words'])
         avg_conf = sum(block_data['confidences']) / len(block_data['confidences']) if block_data['confidences'] else 0
         
-        # Detect block type based on heuristics
+        # Detect block type based on heuristics (now per line)
         block_type = _detect_block_type(
             block_text, 
             block_data['bbox'], 
@@ -157,7 +166,8 @@ def _extract_page_signals(image: Image.Image, page_num: int) -> PageSignal:
         )
         
         blocks.append({
-            'block_num': block_num,
+            'block_num': block_data['block_num'],
+            'line_num': block_data['line_num'],
             'text': block_text,
             'confidence': round(avg_conf, 2),
             'bbox': block_data['bbox'],
