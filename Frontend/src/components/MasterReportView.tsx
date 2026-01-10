@@ -1,5 +1,4 @@
-import React from 'react';
-import { FileText, Image as ImageIcon, PenTool, Layout, Table } from 'lucide-react';
+import { FileText, Image as ImageIcon, PenTool, Layout } from 'lucide-react';
 import type { PageElement } from '../types';
 
 interface MasterReportViewProps {
