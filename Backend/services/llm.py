@@ -28,7 +28,7 @@ class LLMConfig:
         genai.configure(api_key=self.api_key)
         
         # Model configuration
-        self.model_name = "gemini-2.5-flash"
+        self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
         self.model = None
         
         logger.info(f"LLM Config initialized with model: {self.model_name}")
