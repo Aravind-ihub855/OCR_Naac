@@ -1,45 +1,44 @@
-"""
-Backend Models Package
+from dataclasses import dataclass, asdict
+from typing import Dict, Any, List, Optional
 
-Contains all dataclasses organized by pipeline layer:
-- Layer 1: classifier.py (DocumentAnalysis)
-- Layer 2: signals.py (TextBlock, PageSignal, DocumentSignals, BlockType)
-- Layer 3: structural.py (TableColumn, TableCell, TableRow, DetectedTable, StructuralOutput)
-- Layer 4: semantic.py (SemanticColumn, SemanticTable, DocumentMetadata, SemanticOutput)
-- Layer 5: reasoning.py (DocumentArchetype, ReasonedTable, DocumentReasoning)
-- Layer 6: excel.py (ExcelColumn, ExcelRow, ExcelTable, MappingOutput)
-"""
+@dataclass
+class ExcelColumn:
+    """A validated Excel column"""
+    name: str
+    data_type: str  # "string", "number", "currency"
+    width: int = 15
 
-# Layer 1 - Classification
-from .classifier import DocumentAnalysis
+@dataclass
+class ExcelRow:
+    """A validated Excel row"""
+    data: Dict[str, Any]
+    is_total: bool = False
+    is_header: bool = False
 
-# Layer 2 - Signal Preservation
-from .signals import BlockType, TextBlock, PageSignal, DocumentSignals
+@dataclass
+class ExcelTable:
+    """Excel-ready table structure"""
+    table_name: str
+    sheet_name: str
+    columns: List[ExcelColumn]
+    rows: List[ExcelRow]
+    validation: Dict[str, Any]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "table_name": self.table_name,
+            "sheet_name": self.sheet_name,
+            "columns": [asdict(c) for c in self.columns],
+            "rows": [asdict(r) for r in self.rows],
+            "validation": self.validation
+        }
 
-# Layer 3 - Structural Reconstruction
-from .structural import NormalizedBlock, Column, TableRow, DetectedTable, StructuralOutput
-
-# Layer 4 - Semantic Interpretation
-from .semantic import SemanticColumn, SemanticTable, DocumentMetadata, SemanticOutput
-
-# Layer 5 - Document Reasoning
-from .reasoning import DocumentArchetype, ARCHETYPE_SCHEMAS, ReasonedTable, DocumentReasoning
-
-# Layer 6 - Excel Output
-from .excel import ExcelColumn, ExcelRow, ExcelTable, MappingOutput
-
-
-__all__ = [
-    # Layer 1
-    "DocumentAnalysis",
-    # Layer 2
-    "BlockType", "TextBlock", "PageSignal", "DocumentSignals",
-    # Layer 3
-    "NormalizedBlock", "Column", "TableRow", "DetectedTable", "StructuralOutput",
-    # Layer 4
-    "SemanticColumn", "SemanticTable", "DocumentMetadata", "SemanticOutput",
-    # Layer 5
-    "DocumentArchetype", "ARCHETYPE_SCHEMAS", "ReasonedTable", "DocumentReasoning",
-    # Layer 6
-    "ExcelColumn", "ExcelRow", "ExcelTable", "MappingOutput",
-]
+@dataclass
+class MappingOutput:
+    """Complete output of Data Mapper"""
+    tables: List[Dict[str, Any]]
+    metadata_sheet: Dict[str, Any]
+    validation_summary: Dict[str, Any]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
