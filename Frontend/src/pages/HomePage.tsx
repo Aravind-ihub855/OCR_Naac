@@ -1,14 +1,17 @@
-import { useCallback } from 'react';
-import { Header, FileUpload, ProgressBar, ResultCard, ExcelPreview } from '../components';
+import { useCallback, useState } from 'react';
+import { Header, FileUpload, ProgressBar, ResultCard, ExcelPreview, MasterReportView } from '../components';
 import { useConversion } from '../hooks';
 
 export function HomePage() {
+    const [activeTab, setActiveTab] = useState<'report' | 'excel'>('report');
+
     const {
         status,
         progress,
         message,
         filename,
         previewData,
+        analysisData, // Get analysis data
         convert,
         download,
         reset
@@ -62,14 +65,41 @@ export function HomePage() {
                         </div>
                     </section>
 
-                    {/* Excel Preview Section */}
-                    {status === 'success' && previewData.length > 0 && (
-                        <section className="mb-8">
-                            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                                Preview
-                            </h2>
-                            <ExcelPreview sheets={previewData} />
-                        </section>
+                    {/* Results Section */}
+                    {status === 'success' && (analysisData || previewData.length > 0) && (
+                        <div className="space-y-8">
+                            {/* Tabs (Simple Toggle) */}
+                            <div className="flex justify-center gap-4 mb-6">
+                                <button
+                                    onClick={() => setActiveTab('report')}
+                                    className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === 'report' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        }`}
+                                >
+                                    Digital Master Report
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('excel')}
+                                    className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === 'excel' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        }`}
+                                >
+                                    Excel Preview
+                                </button>
+                            </div>
+
+                            {/* Content */}
+                            {activeTab === 'report' && analysisData?.page_elements && (
+                                <section className="mb-8 animate-in fade-in duration-500">
+                                    <MasterReportView elements={analysisData.page_elements} />
+                                </section>
+                            )}
+
+                            {activeTab === 'excel' && previewData.length > 0 && (
+                                <section className="mb-8 animate-in fade-in duration-500">
+                                    <h2 className="text-lg font-semibold text-gray-900 mb-4 ml-2">Excel Sheet Preview</h2>
+                                    <ExcelPreview sheets={previewData} />
+                                </section>
+                            )}
+                        </div>
                     )}
                 </main>
 

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { convertToExcel, downloadBlob } from '../services';
-import type { ConversionState } from '../types';
+import { convertToExcel, analyzePdf, downloadBlob } from '../services'; // Added analyzePdf
+import type { ConversionState, AnalysisResponse } from '../types'; // Added AnalysisResponse
 import type { SheetData } from '../components';
 
 const initialState: ConversionState = {
@@ -13,6 +13,7 @@ const initialState: ConversionState = {
 export function useConversion() {
     const [state, setState] = useState<ConversionState>(initialState);
     const [previewData, setPreviewData] = useState<SheetData[]>([]);
+    const [analysisData, setAnalysisData] = useState<AnalysisResponse | null>(null); // New State
     const blobRef = useRef<Blob | null>(null);
     const filenameRef = useRef<string>('');
 
@@ -20,6 +21,7 @@ export function useConversion() {
         setState(prev => ({ ...prev, ...updates }));
     }, []);
 
+    // ... (keep parseExcelForPreview as is)
     const parseExcelForPreview = async (blob: Blob): Promise<SheetData[]> => {
         try {
             const arrayBuffer = await blob.arrayBuffer();
@@ -33,16 +35,9 @@ export function useConversion() {
                     header: 1,
                     defval: ''
                 });
-
-                // Limit to first 100 rows for preview
                 const limitedData = jsonData.slice(0, 100) as string[][];
-
-                sheets.push({
-                    name: sheetName,
-                    data: limitedData
-                });
+                sheets.push({ name: sheetName, data: limitedData });
             }
-
             return sheets;
         } catch (error) {
             console.error('Failed to parse Excel for preview:', error);
@@ -54,6 +49,7 @@ export function useConversion() {
         filenameRef.current = file.name;
         blobRef.current = null;
         setPreviewData([]);
+        setAnalysisData(null); // Reset analysis
 
         try {
             updateState({
@@ -63,11 +59,10 @@ export function useConversion() {
                 filename: file.name,
             });
 
+            // Start Progress Simulation
             const progressInterval = setInterval(() => {
                 setState(prev => {
-                    if (prev.progress < 40) {
-                        return { ...prev, progress: prev.progress + 5 };
-                    }
+                    if (prev.progress < 40) return { ...prev, progress: prev.progress + 5 };
                     return prev;
                 });
             }, 200);
@@ -75,21 +70,39 @@ export function useConversion() {
             setTimeout(() => {
                 updateState({
                     status: 'processing',
-                    progress: 50,
-                    message: 'Extracting data with AI...',
+                    progress: 40,
+                    message: 'Extracting Logos, Signatures & Tables...',
                 });
             }, 1000);
 
-            const blob = await convertToExcel(file, (progress) => {
-                if (progress > 50) {
-                    updateState({ progress });
-                }
-            });
+            // PARALLEL EXECUTION: Analyze (JSON) + Convert (Excel)
+            // We want the JSON for the UI immediately
+            const [analysisResult, blob] = await Promise.all([
+                analyzePdf(file).catch(err => {
+                    console.error("Analysis failed", err);
+                    return null;
+                }),
+                convertToExcel(file, (progress) => {
+                    // Map upload progress (0-100) to overall progress (50-90)
+                    if (progress > 0) {
+                        updateState({ progress: 50 + Math.floor(progress * 0.4) });
+                    }
+                })
+            ]);
 
             clearInterval(progressInterval);
+
+            if (!blob) throw new Error("Conversion failed to return a file.");
+
             blobRef.current = blob;
 
-            // Parse Excel for preview
+            // Set Analysis Data (Master Report source)
+            if (analysisResult) {
+                // @ts-ignore - The API response might slightly differ, trusting the new type
+                setAnalysisData(analysisResult);
+            }
+
+            // Parse Excel for Preview (Legacy Table View)
             const sheets = await parseExcelForPreview(blob);
             setPreviewData(sheets);
 
@@ -119,6 +132,7 @@ export function useConversion() {
     const reset = useCallback(() => {
         setState(initialState);
         setPreviewData([]);
+        setAnalysisData(null);
         blobRef.current = null;
         filenameRef.current = '';
     }, []);
@@ -126,6 +140,7 @@ export function useConversion() {
     return {
         ...state,
         previewData,
+        analysisData, // Export new state
         convert,
         download,
         reset,
