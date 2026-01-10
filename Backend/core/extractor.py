@@ -3,21 +3,16 @@ import time
 import json
 import logging
 from typing import Dict, Any, List, Optional
-import google.generativeai as genai
-from dotenv import load_dotenv
 
-load_dotenv()
+from services.llm import get_llm_config
 
 logger = logging.getLogger("PDF_Agent.Extractor")
 
 class PDFExtractor:
     def __init__(self):
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY not found in environment")
-        
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
+        # Use centralized LLM configuration
+        self.llm_config = get_llm_config()
+        self.model = self.llm_config.get_model()
 
     def run_pipeline(self, pdf_bytes: bytes, filename: str) -> Dict[str, Any]:
         """Runs the multimodal extraction pipeline."""
@@ -28,7 +23,7 @@ class PDFExtractor:
         try:
             # 1. Upload to Gemini
             logger.info(f"Uploading {filename} to Gemini...")
-            myfile = genai.upload_file(temp_path, mime_type="application/pdf")
+            myfile = self.llm_config.upload_file(temp_path, mime_type="application/pdf")
             
             # 2. Wait for processing
             timeout = 30 # seconds
@@ -37,7 +32,7 @@ class PDFExtractor:
                 if time.time() - start_wait > timeout:
                     raise TimeoutError("Gemini file processing timed out")
                 time.sleep(2)
-                myfile = genai.get_file(myfile.name)
+                myfile = self.llm_config.get_file(myfile.name)
             
             if myfile.state.name == "FAILED":
                 raise Exception(f"File processing failed: {myfile.state.name}")
@@ -53,10 +48,7 @@ class PDFExtractor:
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-            try:
-                genai.delete_file(myfile.name)
-            except:
-                pass
+            self.llm_config.delete_file(myfile.name)
 
     def _get_prompt(self) -> str:
         return """
