@@ -106,196 +106,44 @@ CRITICAL VALIDATION RULES (MUST FOLLOW):
    - DO NOT use empty strings, "ditto", or "do" for merged areas
    - Example: If "2023" spans 3 rows, output "2023" for ALL 3 rows
 
-9.  📄 PAGE STRUCTURE
-   - Extract ALL content: Tables, Key Text Blocks, Document Titles
-   - Maintain exact order of elements as they appear on the page
-   - CAPTURE EVERYTHING: Do not ignore paragraphs between tables
+9.  ✨ COMPREHENSIVE ENTITY DETECTION
+   - 🖼️ LOGOS: Detect logos/images in headers. Return type="logo", content="Description" (e.g. "Company/College Logo"), position="header".
+   - ✍️ SIGNATURES: Detect signing blocks at bottom. Return type="signature", signer_name="Name", designation="Role".
+   - 🏢 METADATA: Header text like "Company Name" or "Address" -> type="metadata".
+   - 📝 TEXT BLOCKS: Standard paragraph text.
+
+10. 📐 LAYOUT PRESERVATION
+   - The output "page_elements" list MUST map the visual vertical flow of the page 1:1.
+   - Order: Header -> Logo -> Title -> Text -> Table -> Text -> Signature.
 
 ═══════════════════════════════════════════════════════════════════════════════
-FEW-SHOT EXAMPLES (Learn from these):
 ═══════════════════════════════════════════════════════════════════════════════
+FEW-SHOT EXAMPLES (Generic Templates - Do NOT copy values):
+(Standard table examples 1-6 omitted for brevity)
 
-EXAMPLE 1: Simple Single-Column Table
-─────────────────────────────────────
-INPUT (from PDF):
-┌─────────────────────────────┬──────────────┐
-│ Description                 │ Amount (₹)   │
-├─────────────────────────────┼──────────────┤
-│ Salary                      │ 8,18,25,263  │
-│ Provident Fund              │ 51,45,525    │
-│ Medical Allowance           │ 12,50,000    │
-├─────────────────────────────┼──────────────┤
-│ Total                       │ 8,82,20,788  │
-└─────────────────────────────┴──────────────┘
+EXAMPLE 7: Full Page with Visual Elements
+──────────────────────────────────────────
+INPUT:
+[Top Left: Logo]   [Organization/Company Name]
+                   [City, State]
 
-CORRECT OUTPUT:
-{
-  "table_name": "Salary Expenditure",
-  "columns": [
-    {"name": "Description", "data_type": "string", "confidence": 0.95},
-    {"name": "Amount", "data_type": "number", "confidence": 0.95}
-  ],
-  "rows": [
-    {
-      "data": {"Description": "Salary", "Amount": "8,18,25,263"},
-      "is_total": false,
-      "is_header": false,
-      "confidence": 0.95
-    },
-    {
-      "data": {"Description": "Provident Fund", "Amount": "51,45,525"},
-      "is_total": false,
-      "is_header": false,
-      "confidence": 0.95
-    },
-    {
-      "data": {"Description": "Medical Allowance", "Amount": "12,50,000"},
-      "is_total": false,
-      "is_header": false,
-      "confidence": 0.95
-    },
-    {
-      "data": {"Description": "Total", "Amount": "8,82,20,788"},
-      "is_total": true,
-      "is_header": false,
-      "confidence": 0.95
-    }
-    }
-  ]
-}
+        Balance Sheet (202X-2X)
 
-EXAMPLE 6: Multi-Line Context & Merged Cells (Based on User Requirement)
-────────────────────────────────────────────────────────────────────────
-INPUT (from PDF):
-Stakeholders' Feedback – Action Taken Report (2021-2022)
-Programme : B.E. - Aerospace Engineering
+[Table Content...]
 
-┌────────┬─────────────┬──────────────────────────┐
-│ S.No   │ Stakeholder │ Name, Designation        │
-├────────┼─────────────┼──────────────────────────┤
-│ 1      │ Faculty     │ Mr. Nehru K              │
-└────────┴─────────────┴──────────────────────────┘
+(Signed)
+[Name of Signatory]
+[Designation]
 
-CORRECT OUTPUT:
+OUTPUT:
 {
   "page_elements": [
-    {
-      "type": "table",
-      "table_name": "Action Taken Report - Aerospace",
-      "table_heading": "Stakeholders' Feedback – Action Taken Report (2021-2022) | Programme : B.E. - Aerospace Engineering",
-      "columns": [...],
-      "rows": [...]
-    }
-  ]
-}
-────────────────────────────────────────
-INPUT (from PDF):
-┌──────────────────┬──────────┬──────────────────┬──────────┐
-│ Expenditure      │ Amount   │ Income           │ Amount   │
-├──────────────────┼──────────┼──────────────────┼──────────┤
-│ Salaries         │ 50,00,000│ Grants           │ 75,00,000│
-│ Infrastructure   │ 25,00,000│ Fees             │ 30,00,000│
-│ Maintenance      │ 10,00,000│ Donations        │ 5,00,000 │
-├──────────────────┼──────────┼──────────────────┼──────────┤
-│ Total            │ 85,00,000│ Total            │1,10,00,000│
-└──────────────────┴──────────┴──────────────────┴──────────┘
-
-CORRECT OUTPUT (TWO separate tables):
-{
-  "tables": [
-    {
-      "table_name": "Expenditure",
-      "columns": [
-        {"name": "Description", "data_type": "string", "confidence": 0.95},
-        {"name": "Amount", "data_type": "number", "confidence": 0.95}
-      ],
-      "rows": [
-        {"data": {"Description": "Salaries", "Amount": "50,00,000"}, "is_total": false, "confidence": 0.95},
-        {"data": {"Description": "Infrastructure", "Amount": "25,00,000"}, "is_total": false, "confidence": 0.95},
-        {"data": {"Description": "Maintenance", "Amount": "10,00,000"}, "is_total": false, "confidence": 0.95},
-        {"data": {"Description": "Total", "Amount": "85,00,000"}, "is_total": true, "confidence": 0.95}
-      ]
-    },
-    {
-      "table_name": "Income",
-      "columns": [
-        {"name": "Description", "data_type": "string", "confidence": 0.95},
-        {"name": "Amount", "data_type": "number", "confidence": 0.95}
-      ],
-      "rows": [
-        {"data": {"Description": "Grants", "Amount": "75,00,000"}, "is_total": false, "confidence": 0.95},
-        {"data": {"Description": "Fees", "Amount": "30,00,000"}, "is_total": false, "confidence": 0.95},
-        {"data": {"Description": "Donations", "Amount": "5,00,000"}, "is_total": false, "confidence": 0.95},
-        {"data": {"Description": "Total", "Amount": "1,10,00,000"}, "is_total": true, "confidence": 0.95}
-      ]
-    }
-  ]
-}
-
-EXAMPLE 3: Compound Row (needs explosion)
-──────────────────────────────────────────
-INPUT (from PDF):
-"Salary Provident Fund 8,18,25,263 51,45,525"
-
-CORRECT OUTPUT (as separate rows):
-[
-  {"data": {"Description": "Salary", "Amount": "8,18,25,263"}, "is_total": false},
-  {"data": {"Description": "Provident Fund", "Amount": "51,45,525"}, "is_total": false}
-]
-
-EXAMPLE 4: Multi-Page Table Continuation (CRITICAL)
-────────────────────────────────────────────────────
-INPUT (from PDF):
-
-Page 1:
-┌─────────────────────┬──────────────┐
-│ Description         │ Amount (₹)   │
-├─────────────────────┼──────────────┤
-│ Salary              │ 50,00,000    │
-│ Rent                │ 10,00,000    │
-└─────────────────────┴──────────────┘
-
-Page 2 (SAME HEADERS - This is a continuation!):
-┌─────────────────────┬──────────────┐
-│ Description         │ Amount (₹)   │
-├─────────────────────┼──────────────┤
-│ Utilities           │ 5,00,000     │
-│ Maintenance         │ 3,00,000     │
-└─────────────────────┴──────────────┘
-
-Page 3 (SAME HEADERS - Still the same table!):
-┌─────────────────────┬──────────────┐
-│ Description         │ Amount (₹)   │
-├─────────────────────┼──────────────┤
-│ Insurance           │ 2,00,000     │
-│ Total               │ 70,00,000    │
-└─────────────────────┴──────────────┘
-
-CORRECT OUTPUT (ONE table with all rows, NOT three separate tables):
-{
-  "table_name": "Expenditure",
-  "page_number": 1,
-  "continues_on_next_page": true,
-  "columns": [
-    {"name": "Description", "data_type": "string", "confidence": 0.95},
-    {"name": "Amount", "data_type": "number", "confidence": 0.95}
-  ],
-  "rows": [
-    {"data": {"Description": "Salary", "Amount": "50,00,000"}, "is_total": false, "page": 1, "confidence": 0.95},
-    {"data": {"Description": "Rent", "Amount": "10,00,000"}, "is_total": false, "page": 1, "confidence": 0.95},
-    {"data": {"Description": "Utilities", "Amount": "5,00,000"}, "is_total": false, "page": 2, "confidence": 0.95},
-    {"data": {"Description": "Maintenance", "Amount": "3,00,000"}, "is_total": false, "page": 2, "confidence": 0.95},
-    {"data": {"Description": "Insurance", "Amount": "2,00,000"}, "is_total": false, "page": 3, "confidence": 0.95},
-    {"data": {"Description": "Total", "Amount": "70,00,000"}, "is_total": true, "page": 3, "confidence": 0.95}
-  ]
-}
-
-WRONG OUTPUT (Don't do this!):
-{
-  "tables": [
-    {"table_name": "Expenditure_Page1", "rows": [...]},  // ❌ WRONG - Don't split!
-    {"table_name": "Expenditure_Page2", "rows": [...]},  // ❌ WRONG - Same table!
-    {"table_name": "Expenditure_Page3", "rows": [...]}   // ❌ WRONG - Still same table!
+    {"type": "logo", "content": "Organization Logo", "position": "header", "order": 1},
+    {"type": "metadata", "key": "Organization", "value": "[Organization Name]", "order": 2},
+    {"type": "metadata", "key": "Location", "value": "[City, State]", "order": 3},
+    {"type": "heading", "content": "Balance Sheet (202X-2X)", "order": 4},
+    {"type": "table", "table_name": "Balance Sheet", "rows": [...], "order": 5},
+    {"type": "signature", "signer_name": "[Name of Signatory]", "designation": "[Designation]", "order": 6}
   ]
 }
 
@@ -305,73 +153,61 @@ STRICT JSON SCHEMA (Follow exactly):
 
 {
   "metadata": {
-    "organization": "string (name of institution/company)",
-    "period": "string (financial year/date range)",
-    "document_type": "string (e.g., 'Income & Expenditure', 'Balance Sheet')",
-    "total_pages": "number",
-    "extraction_date": "string (ISO format)"
+    "organization": "string",
+    "period": "string",
+    "total_pages": "integer"
   },
-  "tables": [
+  "page_elements": [
     {
-      "table_name": "string (descriptive name - USE SAME NAME for continuation tables)",
-      "table_heading": "string (EXACT text found above table in PDF - REQUIRED)",
-      "page_number": "number (starting page of this table)",
-      "continues_on_next_page": "boolean (true if table continues to next page)",
-      "columns": [
-        {
-          "name": "string (column header)",
-          "data_type": "string (one of: 'string', 'number', 'date')",
-          "confidence": "number (0.0 to 1.0)"
-        }
-      ],
+      "type": "table",
+      "order": "number",
+      "table_name": "string",
+      "table_heading": "string",
+      "page_number": "number",
+      "continues_on_next_page": "boolean",
+      "columns": [{"name": "string", "data_type": "string", "confidence": "0-1"}],
       "rows": [
         {
-          "data": {
-            "column_name": "value (preserve exact format for numbers)"
-          },
-          "is_total": "boolean (true if this is a sum/total row)",
-          "is_header": "boolean (true if this is a sub-header row)",
-          "page": "number (which page this row is from - REQUIRED)",
-          "confidence": "number (0.0 to 1.0)",
-          "needs_review": "boolean (true if uncertain)"
+          "data": {"col": "val"},
+          "is_total": "boolean",
+          "page": "number",
+          "confidence": "0-1"
         }
-      ],
-      "validation": {
-        "totals_match": "boolean",
-        "total_expected": "number or null",
-        "total_calculated": "number or null"
-      }
+      ]
+    },
+    {
+      "type": "logo",
+      "order": "number",
+      "content": "string (Description)",
+      "position": "header|footer"
+    },
+    {
+      "type": "signature",
+      "order": "number",
+      "signer_name": "string",
+      "designation": "string"
+    },
+    {
+      "type": "metadata",
+      "order": "number",
+      "key": "string",
+      "value": "string"
+    },
+    {
+      "type": "text_block",
+      "order": "number",
+      "content": "string",
+      "section_heading": "string"
+    },
+    {
+      "type": "heading",
+      "order": "number",
+      "content": "string"
     }
-  ],
-  "processing_notes": ["array of strings with any warnings or observations"]
+  ]
 }
 
-═══════════════════════════════════════════════════════════════════════════════
-EDGE CASES TO HANDLE:
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Multi-page tables: Set "continues_on_next_page": true
-2. Merged header cells: Combine into single column name
-3. Sub-totals: Mark as "is_total": true
-4. Empty cells: Use null or empty string ""
-5. Unclear text: Set "needs_review": true, "confidence": <0.7
-6. Rotated/sideways tables: Extract normally, note in processing_notes
-7. Handwritten annotations: Include in processing_notes, don't mix with table data
-
-═══════════════════════════════════════════════════════════════════════════════
-FINAL CHECKLIST (Before responding):
-═══════════════════════════════════════════════════════════════════════════════
-
-✓ All tables extracted (none missed)
-✓ All rows included (even partial/unclear ones)
-✓ Indian number format preserved
-✓ Totals verified (or flagged if mismatch)
-✓ Dual-column layouts split into separate tables
-✓ Confidence scores assigned
-✓ No hallucinated data
-✓ Valid JSON structure
-
-NOW EXTRACT THE DOCUMENT. Return ONLY the JSON output, no additional text.
+NOW EXTRACT THE DOCUMENT. Return ONLY the JSON output (lines 381...).
         """
 
     def _parse_response(self, text: str) -> Dict[str, Any]:
@@ -385,16 +221,25 @@ NOW EXTRACT THE DOCUMENT. Return ONLY the JSON output, no additional text.
             
             data = json.loads(text[start:end])
             
+            # --- ADAPTER: page_elements -> tables ---
+            if "page_elements" in data:
+                elements = data["page_elements"]
+                tables = [e for e in elements if e.get("type") == "table"]
+                data["tables"] = tables
+            # ----------------------------------------
+
             # Ensure basic structure exists
             if "tables" not in data: 
                 data["tables"] = []
             if "metadata" not in data: 
                 data["metadata"] = {}
+            if "page_elements" not in data:
+                data["page_elements"] = []
             
             # Add processing metadata
             if "processing_notes" not in data:
                 data["processing_notes"] = []
-            data["processing_notes"].append("Extracted via Gemini 2.5 Flash with Enhanced Prompt v2")
+            data["processing_notes"].append("Extracted via Gemini 2.5 Flash with Enhanced Prompt v3")
             
             # Validate and enhance table structure
             for table in data.get("tables", []):

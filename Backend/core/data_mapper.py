@@ -27,6 +27,7 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.utils import get_column_letter
 
 from models import ExcelColumn, ExcelRow, ExcelTable, MappingOutput
 
@@ -69,10 +70,9 @@ def map_to_excel(semantic_result: Dict[str, Any]) -> Tuple[MappingOutput, io.Byt
     validation_report = validate_extraction(merged_tables, metadata)
     if validation_report["warnings"]:
         logger.warning(f"Validation warnings: {validation_report['warnings']}")
-    if validation_report["errors"]:
-        logger.error(f"Validation errors: {validation_report['errors']}")
     
-    # Process each table
+    # --- MODE 2: INDIVIDUAL SHEETS (Data Extraction) ---
+    # Process each table into its own sheet
     excel_tables = []
     validation_results = []
     
@@ -106,9 +106,9 @@ def map_to_excel(semantic_result: Dict[str, Any]) -> Tuple[MappingOutput, io.Byt
         )
         excel_tables.append(excel_table)
     
-    # Generate Excel file
+    # Generate Excel file (passing page_elements for Master Sheet)
     logger.info("Generating Excel file...")
-    excel_file = _generate_excel(excel_tables, metadata)
+    excel_file = _generate_excel(excel_tables, metadata, semantic_result.get('page_elements', []))
     
     # Build output
     output = MappingOutput(
@@ -619,7 +619,7 @@ def _validate_totals(rows: List[ExcelRow], columns: List[Dict[str, Any]]) -> Dic
 
 # -------------------- Excel Generation --------------------
 
-def _generate_excel(tables: List[ExcelTable], metadata: Dict[str, Any]) -> io.BytesIO:
+def _generate_excel(tables: List[ExcelTable], metadata: Dict[str, Any], page_elements: List[Dict[str, Any]] = None) -> io.BytesIO:
     """Generate Excel file with proper formatting"""
     wb = Workbook()
     
@@ -627,6 +627,10 @@ def _generate_excel(tables: List[ExcelTable], metadata: Dict[str, Any]) -> io.By
     if 'Sheet' in wb.sheetnames:
         del wb['Sheet']
     
+    # Create Master Report sheet (if elements exist)
+    if page_elements:
+        _create_master_sheet(wb, page_elements)
+
     # Create metadata sheet first
     _create_metadata_sheet(wb, metadata)
     
@@ -776,3 +780,96 @@ def _parse_number(value: str) -> float:
         return float(clean)
     except (ValueError, TypeError):
         return 0.0
+
+def _create_master_sheet(wb: Workbook, elements: List[Dict[str, Any]]):
+    """
+    Create a 'Master Report' sheet that mirrors the PDF layout.
+    Renders Text, Tables, Logos, and Signatures in sequence.
+    """
+    if not elements:
+        return
+
+    ws = wb.create_sheet("Master Report", 0) # Create as first sheet
+    current_row = 1
+    
+    # Styles
+    title_font = Font(bold=True, size=16)
+    text_font = Font(size=11)
+    meta_font = Font(bold=True, color="555555")
+    
+    # Sort elements by order
+    sorted_elements = sorted(elements, key=lambda x: x.get('order', 999))
+    
+    for el in sorted_elements:
+        el_type = el.get('type')
+        
+        if el_type == 'logo':
+            cell = ws.cell(row=current_row, column=1, value=f"[LOGO: {el.get('content')}]")
+            cell.font = Font(italic=True, color="888888")
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=10)
+            current_row += 2
+            
+        elif el_type == 'metadata':
+            # key: value
+            key = el.get('key', '')
+            val = el.get('value', '')
+            ws.cell(row=current_row, column=1, value=key).font = meta_font
+            ws.cell(row=current_row, column=2, value=val)
+            current_row += 1
+            
+        elif el_type == 'heading':
+            cell = ws.cell(row=current_row, column=1, value=el.get('content'))
+            cell.font = title_font
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=10)
+            current_row += 2
+            
+        elif el_type == 'text_block':
+            content = el.get('content', '')
+            cell = ws.cell(row=current_row, column=1, value=content)
+            cell.font = text_font
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            # Merge across to simulate paragraph
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row+2, end_column=10)
+            current_row += 3
+            
+        elif el_type == 'table':
+            # Render table in place
+            table_name = el.get('table_heading') or el.get('table_name')
+            ws.cell(row=current_row, column=1, value=f"Table: {table_name}").font = Font(bold=True)
+            current_row += 1
+            
+            # Simple inline table render
+            columns = el.get('columns', [])
+            rows = el.get('rows', [])
+            
+            # Headers
+            for c_idx, col in enumerate(columns, 1):
+                cell = ws.cell(row=current_row, column=c_idx, value=col.get('name'))
+                cell.fill = PatternFill(start_color="E0E0E0", fill_type="solid")
+                cell.font = Font(bold=True)
+                cell.border = Border(bottom=Side(style='thin'))
+            current_row += 1
+            
+            # Rows
+            for r in rows:
+                r_data = r.get('data', {})
+                for c_idx, col in enumerate(columns, 1):
+                    val = r_data.get(col.get('name'))
+                    ws.cell(row=current_row, column=c_idx, value=val)
+                current_row += 1
+            
+            current_row += 2 # Spacer
+            
+        elif el_type == 'signature':
+            ws.cell(row=current_row, column=8, value=f"Signed By:").font = Font(italic=True)
+            current_row += 1
+            ws.cell(row=current_row, column=8, value=el.get('signer_name')).font = Font(bold=True)
+            current_row += 1
+            ws.cell(row=current_row, column=8, value=el.get('designation'))
+            current_row += 3
+
+    # Set column widths roughly
+    ws.column_dimensions['A'].width = 20
+    for col in range(2, 11):
+        col_letter = get_column_letter(col)
+        ws.column_dimensions[col_letter].width = 15
