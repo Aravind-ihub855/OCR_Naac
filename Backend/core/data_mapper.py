@@ -58,11 +58,25 @@ def map_to_excel(semantic_result: Dict[str, Any]) -> Tuple[MappingOutput, io.Byt
         excel_file = _generate_excel([], metadata)
         return empty_output, excel_file
     
+    from core.validator import validate_extraction
+    
+    # NEW: Merge continuation tables before processing
+    logger.info(f"Checking for multi-page table continuations among {len(tables)} tables...")
+    merged_tables = _merge_continuation_tables(tables)
+    logger.info(f"After merging: {len(merged_tables)} unique tables")
+    
+    # NEW: Validate merged data
+    validation_report = validate_extraction(merged_tables, metadata)
+    if validation_report["warnings"]:
+        logger.warning(f"Validation warnings: {validation_report['warnings']}")
+    if validation_report["errors"]:
+        logger.error(f"Validation errors: {validation_report['errors']}")
+    
     # Process each table
     excel_tables = []
     validation_results = []
     
-    for idx, table in enumerate(tables):
+    for idx, table in enumerate(merged_tables):
         logger.info(f"Processing table {idx + 1}/{len(tables)}: {table.get('table_name', 'Unknown')}")
         
         # Step 1: Resolve columns
@@ -87,7 +101,8 @@ def map_to_excel(semantic_result: Dict[str, Any]) -> Tuple[MappingOutput, io.Byt
             columns=[ExcelColumn(name=c['name'], data_type=c.get('data_type', 'string')) 
                      for c in resolved_columns],
             rows=clean_rows,
-            validation=validation
+            validation=validation,
+            heading=table.get('table_heading') or table.get('table_name')
         )
         excel_tables.append(excel_table)
     
@@ -109,6 +124,175 @@ def map_to_excel(semantic_result: Dict[str, Any]) -> Tuple[MappingOutput, io.Byt
     
     logger.info(f"Data mapping complete: {len(excel_tables)} tables, {output.validation_summary['total_rows']} rows")
     return output, excel_file
+
+
+# -------------------- Table Merging Logic --------------------
+
+def _merge_continuation_tables(tables: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Merge tables that are continuations of each other across pages.
+    
+    Logic:
+    1. Group tables by column structure similarity and table name
+    2. Verify page sequence
+    3. Merge rows in page order
+    4. Return merged tables
+    """
+    if len(tables) <= 1:
+        return tables
+    
+    merged = []
+    used_indices = set()
+    
+    for i, table in enumerate(tables):
+        if i in used_indices:
+            continue
+        
+        # Find all tables that might be continuations of this one
+        continuation_group = [table]
+        continuation_indices = [i]
+        
+        for j, other_table in enumerate(tables):
+            if j <= i or j in used_indices:
+                continue
+            
+            # Check if this is a continuation
+            if _is_continuation(table, other_table):
+                continuation_group.append(other_table)
+                continuation_indices.append(j)
+                logger.info(f"Detected continuation: '{other_table.get('table_name')}' on page {other_table.get('page_number')} continues '{table.get('table_name')}'")
+        
+        # Merge if we found continuations
+        if len(continuation_group) > 1:
+            merged_table = _merge_table_group(continuation_group)
+            merged.append(merged_table)
+            used_indices.update(continuation_indices)
+            logger.info(f"Merged {len(continuation_group)} table parts into '{merged_table.get('table_name')}'")
+        else:
+            merged.append(table)
+            used_indices.add(i)
+    
+    return merged
+
+
+def _is_continuation(table1: Dict[str, Any], table2: Dict[str, Any]) -> bool:
+    """
+    Check if table2 is a continuation of table1.
+    
+    Criteria:
+    - Similar or identical table names
+    - Identical column structure (names and types)
+    - table2 is on a later page than table1
+    """
+    # Check page order
+    page1 = table1.get('page_number', 0)
+    page2 = table2.get('page_number', 0)
+    
+    if page2 <= page1:
+        return False
+    
+    # Check table name similarity
+    name1 = _normalize_table_name(table1.get('table_name', ''))
+    name2 = _normalize_table_name(table2.get('table_name', ''))
+    
+    if not name1 or not name2:
+        # If names are missing, rely on column matching only
+        pass
+    elif name1 != name2:
+        # Names must match for continuation
+        return False
+    
+    # Check column structure
+    cols1 = table1.get('columns', [])
+    cols2 = table2.get('columns', [])
+    
+    return _columns_match(cols1, cols2)
+
+
+def _normalize_table_name(name: str) -> str:
+    """Normalize table name for comparison."""
+    if not name:
+        return ""
+    # Remove common suffixes like "_Page1", " (continued)", etc.
+    import re
+    name = re.sub(r'[_\s]*page[_\s]*\d+', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'[_\s]*\(continued\)', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'[_\s]*-[_\s]*\d+', '', name)
+    return name.strip().lower()
+
+
+def _columns_match(cols1: List[Dict[str, Any]], cols2: List[Dict[str, Any]]) -> bool:
+    """
+    Check if two column structures match.
+    
+    Matching criteria:
+    - Same number of columns
+    - Same column names (normalized)
+    - Same data types
+    """
+    if len(cols1) != len(cols2):
+        return False
+    
+    for c1, c2 in zip(cols1, cols2):
+        name1 = _normalize_column_name(c1.get('name', ''))
+        name2 = _normalize_column_name(c2.get('name', ''))
+        
+        if name1 != name2:
+            return False
+        
+        # Data types should match
+        type1 = c1.get('data_type', 'string')
+        type2 = c2.get('data_type', 'string')
+        
+        if type1 != type2:
+            return False
+    
+    return True
+
+
+def _normalize_column_name(name: str) -> str:
+    """Normalize column name for comparison."""
+    if not name:
+        return ""
+    import re
+    # Remove special characters, currency symbols, units
+    name = re.sub(r'[₹$€£¥\(\)\[\]]', '', name)
+    name = re.sub(r'\s+', ' ', name)
+    return name.strip().lower()
+
+
+def _merge_table_group(tables: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Merge a group of continuation tables into one.
+    
+    Strategy:
+    - Use first table's metadata (name, columns)
+    - Combine all rows in page order
+    - Preserve page numbers in row metadata
+    """
+    if not tables:
+        return {}
+    
+    # Sort by page number
+    sorted_tables = sorted(tables, key=lambda t: t.get('page_number', 0))
+    
+    # Use first table as base
+    merged = sorted_tables[0].copy()
+    
+    # Collect all rows from all tables
+    all_rows = []
+    for table in sorted_tables:
+        rows = table.get('rows', [])
+        all_rows.extend(rows)
+    
+    merged['rows'] = all_rows
+    
+    # Update metadata
+    merged['continues_on_next_page'] = False  # Final merged table doesn't continue
+    merged['page_count'] = len(sorted_tables)
+    merged['page_range'] = f"{sorted_tables[0].get('page_number', 1)}-{sorted_tables[-1].get('page_number', 1)}"
+    
+    return merged
 
 
 # -------------------- Column Resolution --------------------
@@ -491,12 +675,18 @@ def _create_metadata_sheet(wb: Workbook, metadata: Dict[str, Any]):
 
 
 def _create_table_sheet(wb: Workbook, table: ExcelTable):
-    """Create a sheet for a single table"""
+    """Create a sheet for a single table with highlighted heading"""
     ws = wb.create_sheet(table.sheet_name)
     
     # Styles
+    # Main Heading Style
+    main_heading_font = Font(bold=True, size=14, color="000000")
+    main_heading_fill = PatternFill(start_color="FFD966", end_color="FFD966", fill_type="solid") # Gold
+    main_heading_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    
+    # Column Header Style
     header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid") # Blue
     header_alignment = Alignment(horizontal="center", vertical="center")
     
     thin_border = Border(
@@ -506,19 +696,31 @@ def _create_table_sheet(wb: Workbook, table: ExcelTable):
         bottom=Side(style='thin')
     )
     
-    total_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    total_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid") # Light Gold
     total_font = Font(bold=True)
     
-    # Write headers
+    # 1. Write Main Table Heading (Row 1)
+    heading_text = table.heading or table.table_name
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(table.columns))
+    cell = ws.cell(row=1, column=1, value=heading_text)
+    cell.font = main_heading_font
+    cell.fill = main_heading_fill
+    cell.alignment = main_heading_alignment
+    cell.border = thin_border
+    
+    # Set Row 1 height
+    ws.row_dimensions[1].height = 30
+    
+    # 2. Write Column Headers (Row 2)
     for col_idx, column in enumerate(table.columns, start=1):
-        cell = ws.cell(row=1, column=col_idx, value=column.name)
+        cell = ws.cell(row=2, column=col_idx, value=column.name)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = header_alignment
         cell.border = thin_border
     
-    # Write data rows
-    for row_idx, row in enumerate(table.rows, start=2):
+    # 3. Write Data Rows (Row 3+)
+    for row_idx, row in enumerate(table.rows, start=3):
         for col_idx, column in enumerate(table.columns, start=1):
             value = row.data.get(column.name, '')
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
@@ -543,10 +745,12 @@ def _create_table_sheet(wb: Workbook, table: ExcelTable):
             if value:
                 max_length = max(max_length, len(str(value)))
         
-        ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = min(max_length + 2, 50)
+        # Adjust for bold header width
+        width = min(max_length + 2, 50)
+        ws.column_dimensions[ws.cell(row=2, column=col_idx).column_letter].width = width
     
-    # Freeze header row
-    ws.freeze_panes = 'A2'
+    # Freeze header rows (Rows 1 & 2)
+    ws.freeze_panes = 'A3'
 
 
 def _sanitize_sheet_name(name: str) -> str:
@@ -561,3 +765,14 @@ def _sanitize_sheet_name(name: str) -> str:
         name = name[:28] + '...'
     
     return name or "Sheet"
+
+def _parse_number(value: str) -> float:
+    """Parse a string number to float, removing commas."""
+    if not value:
+        return 0.0
+    try:
+        # Remove commas and currency symbols if any remain
+        clean = str(value).replace(',', '').replace('₹', '').strip()
+        return float(clean)
+    except (ValueError, TypeError):
+        return 0.0

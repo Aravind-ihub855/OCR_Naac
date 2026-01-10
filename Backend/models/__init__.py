@@ -23,6 +23,7 @@ class ExcelTable:
     columns: List[ExcelColumn]
     rows: List[ExcelRow]
     validation: Dict[str, Any]
+    heading: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         return {
